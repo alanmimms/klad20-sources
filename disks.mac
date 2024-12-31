@@ -1,0 +1,910 @@
+TITLE 	DISKS
+SUBTTL	GENERAL PURPOSE DISK UTILITIES AND PARAMETERS
+
+	SEARCH	DEFINS,MONSYM,UUOSYM
+	RELOC
+
+	ENTRY	ABBPCE,ABBPCY,ABBPDA,ABBPT,ABCCE,ABCY
+	ENTRY	ABCYDA,ABSUR,AVSKTM,CBDAT,CWFMT
+	ENTRY	CWFTD,CWFTHD,CWHD,CWHDC
+	ENTRY	CWRWD,CWRHD,CWRHDC,CWRTD,CWWTD
+	ENTRY	DATTBL,DBDAT,DRVTYP,DRVNAM,FBCE,FCYCE,LBCE
+	ENTRY	LBDA,LCYCE,MXCYL,MXSEC,MXSKTM,MXSCTM,MXSUR
+	ENTRY	RECTM,REVTM,SECTM,USERDA,RWNXTM
+	ENTRY	ADCON,GENBAT,TYPN,TYPA
+	ENTRY	HOMCHK,HOMPNT,BATCHK,BATPNT,MNTTST
+
+;These are found in util1
+
+	EXTERN	ICORE
+
+;Adcon -- disk address conversion routine
+;Translates both ways between disk addresses and logical
+;Block numbers based on state of ac1 when called.
+;Call	seq:
+;	Move	1,arg1		;block #
+;	Move	2,arg2		;cylinder,,trk,rec
+;	Go	adcon		;call the routine
+;	Rtn			;it returns here
+;
+;If ac1 is (neg) when called, the routine converts the contents
+;Of ac2 (disk adr) to a block number and returns the results in ac1.
+;
+;If ac1 is (pos) at the call, the routine converts the
+;Contents of ac1 (block #) to a disk address and returns
+;The results in ac2
+
+	X2=X1			;Special for possible geometry change
+ADCON:	PUT	2		;Save ac's
+	PUT	1
+	JUMPL	1,CTB		;Jump if convert to a block
+	IDIV	1,ABBPCY(X2)	;Blocks per cyl
+	HRLZM	1,-1(P)		;Put on stack as cylinder #
+	MOVE	1,2		;Remainder to ac1
+	IDIV	1,ABBPT(X2)	;Calculate surface #
+	LSH	1,^D8		;Position it
+	IOR	1,2		;Remainder is record #
+	HRRM	1,-1(P)		;Put on stack trk,rec
+	JRST	ADCONX		;To common exit code
+
+;Convert to a block #
+
+CTB:	LDB	1,[POINT 8,-1(P),35] ;Record #
+	LDB	2,[POINT 8,-1(P),27] ;Track #
+	IMUL	2,ABBPT(X2)	;X # of sect per trk
+	ADD	1,2		;A running sum in ac1
+	HLRZ	2,-1(P)		;Get cylinder #
+	IMUL	2,ABBPCY(X2)	;X # blocks per cyl
+	ADD	1,2		;Update running sum
+	MOVEM	1,(P)		;On stack as block count
+ADCONX:	GET	1
+	GET	2
+	RTN
+
+;Homchk -- check data for home block criteria
+;User supplies a pointer to a buffer where a home block has been read.
+;The routine checks contents for validity and branches accordingly. 
+;
+;	A home block is valid if -
+;	- First word is sixbit "hom"
+;	- 2Nd last word is 0,,707070
+;	- Last word is a legal block number (1 or 12 octal)
+;
+;If a valid home block exists, the skip return will be taken
+;With ac1 containing the sixbit name of the monitor who wrote
+;The block (tops10 or tops20 or (???? if unknown)), and ac2
+;Will contain the sixbit structure name or ???? if unknown.
+;
+;The monitor name is determined from the contents of the 173
+;Word (octal) in the home block. the word is a particular
+;Constant for either tops10 or tops20 and is valid for all system
+;Packs. it is actually the first word of a 3 word system descriptor
+;Which is pached in a funny pdp11 8-bit ascii format. it is 
+;Described in detail in the tops10 home block spec...
+;
+;If no home block exists, this routine will take the non skip
+;Return and the ac's will be unmodified.
+;
+;Call seq:
+;	Move	1,arg		;pointer to first word
+;	Go	homchk		;call routine
+;	Rtn+1			;no home block
+;	Rtn+2			;valid home block 
+
+HOMCHK:	PUT	0		;Save ac's
+	PUT	1
+	PUT	2
+	PUT	3
+	MOVE	3,1		;Get pointer to ac3
+	MOVE	0,(3)		;Get 1st word
+	CAME	0,[SIXBIT/HOM/]	;Is it correct ?
+	JRST	HOMX		;No.
+	MOVE	0,176(3)	;Get 2nd last word
+	CAIE	0,707070	;Is it correct ?
+	JRST	HOMX		;No.
+	MOVE	0,177(3)	;Get last word
+	CAIE	0,1		;See if valid. 
+	CAIN	0,12
+	AOSA	-4(P)		;Valid. bump return address and skip
+	JRST	HOMX		;Invalid. exit
+
+;Valid home block. figure out monitor name and structure name
+
+	MOVE	0,173(3)	;Get word 173
+	CAME	0,[047524,,051520] ;This is value for tops10
+	JRST	T20T		;Wrong...try for tops20
+	MOVE	1,[SIXBIT/TOPS10/] ;Ok.. tops10
+	MOVE	2,4(3)		;Gets the structure name
+	JRST	MCMN		;To common code
+T20T:	CAME	0,[020040,,047524] ;This is value for tops20
+	JRST	OTHR		;Wrong ... doesn't look like either
+	MOVE	1,[SIXBIT/TOPS20/] ;Ok.. tops20
+	MOVE	2,3(3)		;Gets the structure name
+	JRST	MCMN		;To common code
+OTHR:	MOVE	1,[SIXBIT/????/] ;Don't know monitor type
+	MOVE	2,[SIXBIT/????/] ;Don't know structure name
+MCMN:	MOVEM	1,-2(P)		;Fix up ac2 on stack
+	MOVEM	2,-1(P)		;Fix up ac1 on stack
+HOMX:	GET	3		;Restore ac's
+	GET	2
+	GET	1
+	GET	0
+	RTN			;And exit
+
+;Hompnt -- check/report data for home block criteria
+;This routine is functionally identical to homchk except for
+;The addition of messages that it prints besides checking.
+;You will get one of the following 4 messages from this routine:
+;	- Media does not contain valid "home" blocks
+;	- Media contains valid "home" blocks. the i.d. is "tops10-name"
+;	- Media contains valid "home" blocks. the i.d. is "tops20-name"
+;	- Media contains valid "home" blocks. the i.d. is "????-????"
+;	..... These messages are force printed .....
+;
+;User supplies a pointer to a buffer where a home block has
+;Been read. the routine checks contents for validity and branches
+;Accordingly after printing proper msg and a crlf. 
+;
+;	A home block is valid if -
+;	- First word is sixbit "hom"
+;	- 2Nd last word is 0,,707070
+;	- Last word is a legal block number (1 or 12 octal)
+;
+;If a valid home block exists, the skip return will be taken
+;With ac1 containing the sixbit name of the monitor who wrote
+;The block (tops10 or tops20 or (???? if unknown)), and ac2
+;Will contain the sixbit structure name or ???? if unknown.
+;
+;The monitor name is determined from the contents of the 173
+;Word (octal) in the home block. the word is a particular
+;Constant for either tops10 or tops20 and is valid for all system
+;Packs. it is actually the first word of a 3 word system descriptor
+;Which is pached in a funny pdp11 8-bit ascii format. it is 
+;Described in detail in the tops10 home block spec...
+;
+;If no home block exists, this routine will take the non skip
+;Return and the ac's will be unmodified.
+;
+;Call seq:
+;	Move	1,arg		;pointer to first word
+;	Go	hompnt		;call routine
+;	Rtn+1			;no home block
+;	Rtn+2			;valid home block 
+
+HOMPNT:	PUT	0		;Save ac's
+	PUT	1
+	PUT	2
+	GO	HOMCHK		;Call the check routine
+	JRST	HPB		;Invalid home block
+	AOS	-3(P)		;Valid home block. bump the return
+	MOVEM	1,-1(P)		;Monitor name goes onto stack
+	MOVEM	2,(P)		;Structure name goes onto stack
+	TEXTF	HMMS2		;Print part of valid message
+	MOVE	0,1		;Get monitor name
+	PNTSXF			;Print in sixbit
+	TEXTF	[ASCIZ/ - /]	;A delimiter
+	MOVE	0,2		;Get the structure name
+	PNTSXF			;Print in sixbit
+	TEXTF	[ASCIZ/"
+/]				;End of valid message
+	JRST	HPCMN		;To exit code
+HPB:	TEXTF	HMMS1		;Print invalid home block message
+HPCMN:	GET	2		;Restore ac's
+	GET	1
+	GET	0
+	RTN			;Exit
+
+HMMS1:	ASCIZ/MEDIA DOES NOT CONTAIN VALID "HOME" BLOCKS.
+/
+
+HMMS2:	ASCIZ/MEDIA CONTAINS VALID "HOME" BLOCKS.  VOL-ID IS "/
+
+
+
+;Batchk -- check data for valid bat block criteria
+;The user supplies a pointer to a buffer that contains data
+;Read in from a potential bat block. this routine examines the
+;Data to see if this is in fact a valid bat block and then
+;Branches accordingly. 
+;
+;	A valid bat block meets the following criteria -
+;	- The first word is sixbit "bat"
+;	- The 2nd last word is 0,,606060
+;	- The last word is a valid block number (2 or 13 octal)
+;
+;Call seq:
+;	Move	1,arg		;pointer to buffer
+;	Go	batchk		;call the routine
+;	Rtn+1			;not a valid bat block
+;	Rtn+2			;valid bat block 
+
+BATCHK:	PUT	0		;Save ac's
+	PUT	1
+	MOVE	0,(1)		;Get first word
+	CAME	0,[SIXBIT/BAT/] ;Is it valid ?
+	JRST	NOBAT		;No.
+	MOVE	0,176(1)	;Get 2nd last word
+	CAIE	0,606060	;Is it valid ?
+	JRST	NOBAT		;No
+	MOVE	0,177(1)	;Get last word
+	CAIE	0,2		;See if valid block number
+	CAIN	0,13
+	AOS	-2(P)		;Looks ok. bump the return
+NOBAT:	GET	1		;Restore ac's
+	GET	0
+	RTN			;And exit
+
+;Batpnt -- check/print status of bat block validity
+;This routine is identical to batchk except for an additional
+;Print function. this routine prints one of the following 2
+;Messages before it exits:
+;	- Media does not contain valid "bat" blocks
+;	- Media contains valid "bat" blocks
+;	..... These messages are force printed .....
+;
+;The user supplies a pointer to a buffer that contains data
+;Read in from a potential bat block. this routine examines the
+;Data to see if this is in fact a valid bat block and then
+;Branches accordingly after printing proper message followed
+;By a crlf. 
+;
+;A valid bat block meets the following criteria -
+;- The first word is sixbit "bat"
+;- The 2nd last word is 0,,606060
+;- The last word is a valid block number (2 or 13 octal)
+;
+;Call seq:
+;	Move	1,arg		;pointer to buffer
+;	Go	batpnt		;call the routine
+;	Rtn+1			;not a valid bat block
+;	Rtn+2			;valid bat block 
+
+BATPNT:	PUT	2		;Save ac2
+	MOVEI	2,BINVLD	;Get addr of invalid message ...
+	GO	BATCHK		;Call the check routine
+	JRST	BP		;Bat block invalid
+	AOS	-1(P)		;Block valid. bump the return
+	MOVEI	2,BVLD		;Get addr of valid message
+BP:	TEXTF	(2)		;Ac2 points to correct message
+	GET	2		;Restore ac
+	RTN			;Exit
+
+BINVLD:	ASCIZ/MEDIA DOES NOT CONTAIN VALID "BAT" BLOCKS.
+/
+
+BVLD:	ASCIZ/MEDIA CONTAINS VALID "BAT" BLOCKS.
+/
+
+
+;Genbat -- generate "bat" block image in core
+;This routine accepts a core addr and block # and generates
+;A clean "bat" block image in the buffer.
+;Call	seq:
+;	Move	1,arg1		;bat block # (2 or 13)
+;	Move	2,arg2		;core address
+;	Go	genbat		;call the routine
+;	Rtn			;rtn+1 always 
+
+GENBAT:	PUT	1		;Save ac's
+	PUT	2
+	MOVE	1,(P)		;Get core addr
+	HRL	1,CWRWD(X1)	;+Wc ,, addr
+	SETZM	2		;Data = 0
+	GO	ICORE		;Inits buffer to 0's
+	MOVE	2,(P)		;Pointer to buffer start
+	MOVE	1,[SIXBIT/BAT/]	;The identifier
+	MOVEM	1,0(2)		;Goes to 1st location
+	MOVE	1,[-172,,4]	;A pointer for monitor
+	MOVEM	1,1(2)		;Put in the 2nd word
+	LDB	1,[POINT 7,MBCN,6] ;Get bare 7 bit rh device code
+	DPB	1,[POINT 7,2(2),24] ;Plug it into word-3 proper field
+	MOVEI	1,606060	;Null pattern
+	MOVEM	1,^D126(2)	;2Nd last word in buffer
+	MOVE	1,-1(P)		;Get the block #
+	MOVEM	1,^D127(2)	;Last word of the buffer
+	GET	2		;Restore ac's
+	GET	1
+	RTN			;Exit
+
+;Mnttst -- tests for a mountable structure
+;This routine tests whether or nor a given structure is currently
+;Mounted and returns accordingly.
+;
+;In exec mode you always get the not-mounted return
+;
+;For tops20 an mstr jsys is performed using physical controller
+;And drive numbers from mbcn and drive.
+;
+;For tops10 a devnam uuo is executed using the sixbit name of the
+;Structure. if the uuo fails, the structure is not mounted. if the
+;Uuo is succesfull, the structure is mounted. there is a problem under
+;Tops10: the scheme does not always work when structures are mounted
+;Under alias names. there are 2 possibilities: the first case 
+;Is when my home block indicates a structure name of "foo", if
+;That pack is mounted under a different name it will appear to
+;Be not-mounted. the second case is when my pack named "foo" is
+;Really not mounted but there happens to be somthing else on the
+;System that is mounted as "foo", this routine will find the
+;Structure mounted. this problem seems to be insolvable because
+;There is no way under tops10 to find out if a particular drive
+;On a particular controller is mounted. (ie. you can't ask
+;If rh-540 drive-0 is part of a mounted structure). 
+;
+;Call seq:
+;	Move	2,arg2		;see below ....
+;	Move	ac1,[sixbit/name/] ;name of structure
+;	Go	mnttst		;call the routine
+;	Rtn+1			;structure is not mounted
+;	Rtn+2			;structure is mounted 
+;
+;Arg2 sets up the disk address for the mstr jsys under tops20. the
+;Device address is specified in 3 fields of this argument:
+;  Bits 3-9 specify the controller (rh) device code
+;  Bits 18-26 are the master number in a master slave cofiguration or
+;	A dx20 system. this field should be -1 for simple systems
+;	Like rp04, rp06, etc.
+;  Bits 27-36 is the unit number or drive number. 
+
+MNTTST:	SKIPA			;Can be no-op to force not mounted state
+	RTN			;This takes not-mounted return
+	SKIPN	USER		;In user mode ?
+	RTN			;No. take the not mounted return
+	PUT	1		;Save ac's
+	PUT	2
+	SKIPE	MONTYP		;Skip if tops10 ...
+	JRST	T20		;Jump to tops20 handler
+T10:	DEVNAM	1,		;See if unit is mounted
+	 JRST	SNM		;Error return means structure is not mounted
+	JRST	SM		;Normal return means we are mounted
+
+T20:	SETZM	ARGBLK		;Clear 1st word
+	MOVE	1,[ARGBLK,,ARGBLK+1] ;A blt pointer
+	BLT	1,ARGBLK+.MSRLN-1 ;Clear the argument block
+	LDB	1,[POINT 3,2,9] ;Get the channel number
+	MOVEM	1,ARGBLK	;Chan # to 1st word
+	LDB	1,[POINT 9,2,26] ;Gets master number or dx number
+	CAIN	1,777		;Is the field a -1 ?
+	SETOM	1		;Yes... then make whole word a -1
+	MOVEM	1,ARGBLK+1	;Selects controller 
+	ANDI	2,777		;Get the drive (unit) field
+	MOVEM	2,ARGBLK+2	;Plugs in the unit number
+	MOVE	1,[.MSRLN,,.MSRUS] ;Length of argblk,,function code
+	MOVEI	2,ARGBLK	;Pointer to the argument block
+	MSTR			;Do the jsys
+	 ERCAL	[RTN]		;No action on error for now
+	MOVE	1,ARGBLK+3	;Get software status word
+	TLNE	1,(MS%MNT)	;Skip if unit is not mounted
+SM:	AOS	-2(P)		;Mounted structure. bump return addr.
+SNM:	GET	2		;Restore ac's
+	GET	1
+	RTN			;And exit
+
+;Here's the argument block for mstr jsys
+
+ARGBLK:	BLOCK	.MSRLN		;Define a storage block
+
+;Device characteristics parameter tables
+;Here are all the disk addressing parameters listed in
+;Parallel structured tables.  the following apply:
+;
+;	Index	drive type
+;	  0	Rp04
+;	  1	Rp06
+;	  2	Rp07 300 mb
+;	  3	Rp07 600 mb
+;	  4	Rm03
+;	  5	Rp06+
+;	  6	Rp20 (tops10)
+;	  7	Rp20 (tops20) 
+
+;Table drive types (low order 6 bits only)
+
+DRVTYP:	20			;Rp04
+	22			;Rp06
+	40			;Rp07 (300 mb)
+	42			;Rp07 (600 mb)
+	24			;Rm03
+	23			;Rp06+
+	61			;Rp20 (tops10)
+	61			;Rp20 (tops20)
+	Z			;End of table mark .....
+
+;Drive names in sixbit ...
+
+DRVNAM:	SIXBIT	/(RP04)/
+	SIXBIT	/(RP06)/
+	SIXBIT	/(RP07)/
+	SIXBIT	/(RP07)/
+	SIXBIT	/(RM03)/
+	SIXBIT	/RP06+/
+	SIXBIT	/(RP20)/
+	SIXBIT	/(RP20)/
+
+;Maximum cylinder number in the monitor data area
+
+MXCYL:	^D409			;Rp04
+	^D813			;Rp06
+	^D557			;Rp07 (300 mb)
+	^D628			;Rp07 (600 mb)
+	^D821			;Rm03
+	^D813			;Rp06+
+	^D1118			;Rp20 (tops10)
+	^D1118			;Rp20 (tops20)
+
+;First cylinder of diagnostic area
+
+FCYCE:	^D410			;Rp04
+	^D814			;Rp06
+	^D558			;Rp07 (300 mb)
+	^D629			;Rp07 (600 mb)
+	^D822			;Rm03
+	^D814			;Rp06+
+	^D1119			;Rp20 (tops10)
+	^D1119			;Rp20 (tops20)
+
+;Last cylinder of the diagnostic area (available for dec)
+
+LCYCE:	^D410			;Rp04
+	^D814			;Rp06
+	^D559			;Rp07 (300 mb)
+	^D630			;Rp07 (600 mb)
+	^D822			;Rm03
+	^D814			;Rp06+
+	^D1119			;Rp20 (tops10)
+	^D1119			;Rp20 (tops20)
+
+;Maximum surface numbers
+
+MXSUR:	^D18			;Rp04
+	^D18			;Rp06
+	^D29			;Rp07 (300 mb)
+	^D31			;Rp07 (600 mb)
+	^D4			;Rm03
+	^D18			;Rp06+
+	^D29			;Rp20 (tops10)
+	^D29			;Rp20 (tops20)
+
+;Maximum sector number on a track
+
+MXSEC:	^D19			;Rp04
+	^D19			;Rp06
+	^D28			;Rp07 (300 mb)
+	^D42			;Rp07 (600 mb)
+	^D29			;Rm03
+	^D28			;Rp06+
+	^D24			;Rp20 (tops10)
+	^D5			;Rp20 (tops20)
+
+
+;Absolute number of surfaces on a cylinder
+
+ABSUR:	^D19			;Rp04
+	^D19			;Rp06
+	^D30			;Rp07 (300 mb)
+	^D32			;Rp07 (600 mb)
+	^D5			;Rm03
+	^D19			;Rp06+
+	^D30			;Rp20 (tops10)
+	^D30			;Rp20 (tops20)
+
+;Absolute number of cylinders in monitor data area
+
+ABCYDA:	^D410			;Rp04
+	^D814			;Rp06
+	^D558			;Rp07 (300 mb)
+	^D629			;Rp07 (600 mb)
+	^D822			;Rm03
+	^D814			;Rp06+
+	^D1119			;Rp20 (tops10)
+	^D1119			;Rp20 (tops20)
+
+;Absolute number of cylinders allowed for diagnostic area
+
+ABCCE:	1			;Rp04
+	1			;Rp06
+	2			;Rp07 (300 mb)
+	2			;Rp07 (600 mb)
+	1			;Rm03
+	1			;Rp06+
+	1			;Rp20 (tops10)
+	1			;Rp20 (tops20)
+
+	PAGE
+;Absolute number of cylinders on the media (avail to dec)
+
+ABCY:	^D411			;Rp04
+	^D815			;Rp06
+	^D560			;Rp07 (300 mb)
+	^D631			;Rp07 (600 mb)
+	^D823			;Rm03
+	^D815			;Rp06+
+	^D1120			;Rp20 (tops10)
+	^D1120			;Rp20 (tops20)
+
+;Absolute number of blocks on any trk
+
+ABBPT:	^D20			;Rp04
+	^D20			;Rp06
+	^D29			;Rp07 (300 mb)
+	^D43			;Rp07 (600 mb)
+	^D30			;Rm03
+	^D29			;Rp06+
+	^D25			;Rp20 (tops10)
+	^D6			;Rp20 (tops20)
+
+;Absolute number of blocks on any cylinder
+
+ABBPCY:	^D20*^D19		;Rp04 (blks/trk * trks/cyl)
+	^D20*^D19		;Rp06
+	^D29*^D30		;Rp07 (300 mb)
+	^D43*^D32		;Rp07 (600 mb)
+	^D30*^D5		;Rm03
+	^D29*^D19		;Rp06+
+	^D25*^D30		;Rp20 (tops10)
+	^D6*^D30		;Rp20 (tops20)
+
+;Absolute number of blocks in the monitor data area
+
+ABBPDA:	^D20*^D19*^D410		;Rp04 (blks/trk * trks/cyl * cyl in data area)
+	^D20*^D19*^D814		;Rp06
+	^D29*^D30*^D558		;Rp07 (300 mb)
+	^D43*^D32*^D629		;Rp07 (600 mb)
+	^D30*^D5*^D822		;Rm03
+	^D29*^D19*^D814 ;Rp06+
+	^D25*^D30*^D1119 ;Rp20 (tops10)
+	^D6*^D30*^D1119		;Rp20 (tops20)
+
+;Absolute number of blocks in the diagnostic area
+
+ABBPCE:	^D20*^D19*1		;Rp04 (blks/trk * trks/cyl * cyl in maint area)
+	^D20*^D19*1		;Rp06
+	^D29*^D30*2		;Rp07 (300 mb)
+	^D43*^D32*2		;Rp07 (600 mb)
+	^D30*^D5*1		;Rm03
+	^D29*^D19*1		;Rp06+
+	^D25*^D30*1		;Rp20 (tops10)
+	^D6*^D30*1		;Rp20 (tops20)
+
+;Maximum block number in the monitor data area
+;(Absolute # of blocks in data area)-1
+
+LBDA:	<^D20*^D19*^D410>-1 ;Rp04
+	<^D20*^D19*^D814>-1 ;Rp06
+	<^D29*^D30*^D558>-1 ;Rp07 (300 mb)
+	<^D43*^D32*^D629>-1 ;Rp07 (600 mb)
+	<^D30*^D5*^D822>-1  ;Rm03
+	<^D29*^D19*^D814>-1 ;Rp06+
+	<^D25*^D30*^D1119>-1 ;Rp20 (tops10)
+	<^D6*^D30*^D1119>-1  ;Rp20 (tops20)
+
+;First block number in the diagnostic area
+;Same as absolute number of blocks in data area
+
+FBCE:	^D20*^D19*^D410		;Rp04
+	^D20*^D19*^D814		;Rp06
+	^D29*^D30*^D558		;Rp07 (300 mb)
+	^D43*^D32*^D629 ;Rp07 (600 mb)
+	^D30*^D5*^D822		;Rm03
+	^D29*^D19*^D814 ;Rp06+
+	^D25*^D30*^D1119 ;Rp20 (tops10)
+	^D6*^D30*^D1119		;Rp20 (tops20)
+
+;Last block number in diagnostic area (avail to dec)
+;(Absolute # of blocks on the disk)-1
+
+LBCE:	<^D20*^D19*^D411>-1 ;Rp04
+	<^D20*^D19*^D815>-1 ;Rp06
+	<^D29*^D30*^D560>-1 ;Rp07 (300 mb)
+	<^D43*^D32*^D631>-1 ;Rp07 (600 mb)
+	<^D30*^D5*^D823>-1  ;Rm03
+	<^D29*^D19*^D815>-1 ;Rp06+
+	<^D25*^D30*^D1120>-1 ;Rp20 (tops10)
+	<^D6*^D30*^D1120>-1  ;Rp20 (tops20)
+
+;Here are the pdp10/20 word count values
+;These are also indexed into by the drive type index. 
+
+CWRWD:	^D128			;Rp04 1 sector read or write
+	^D128			;Rp06
+	^D128			;Rp07 (300 mb)
+	^D128			;Rp07 (600 mb)
+	^D128			;Rm03
+	^D128			;Rp06+
+	^D128			;Rp20 (tops10)
+	^D512			;Rp20 (tops20)
+
+CWRHD:	^D130			;Rp04 1 sector read header and data cmod=0
+	^D130			;Rp06
+	^D129			;Rp07 (300 mb)
+	^D129			;Rp07 (600 mb)
+	^D129			;Rm03
+	^D130			;Rp06+
+	^D130			;Rp20 (tops10)
+	^D514			;Rp20 (tops20)
+
+CWRHDC:	^D130			;Rp04 1 sector read header and data cmod=1
+	^D130			;Rp06
+	^D3			;Rp07 (300 mb)
+	^D3			;Rp07 (600 mb)
+	^D129			;Rm03
+	^D130			;Rp06+
+	-1			;Rp20 (tops10)
+	-1			;Rp20 (tops20)
+
+CWRTD:	-1			;Rp04 read track descriptor
+	-1			;Rp06
+	^D3			;Rp07 (300 mb)
+	^D3			;Rp07 (600 mb)
+	-1			;Rm03
+	-1			;Rp06+
+	^D3			;Rp20 (tops10) read only
+	^D3			;Rp20 (tops20) read only
+
+
+CWWTD:	-1			;Rp04 write track descriptor
+	-1			;Rp06
+	^D3			;Rp07 (300 mb)
+	^D3			;Rp07 (600 mb)
+	-1			;Rm03
+	-1			;Rp06+
+	^D130			;Rp20 (tops10)
+	^D514			;Rp20 (tops20)
+
+CWFMT:	^D20*^D130		;Rp04 format entire track
+	^D20*^D130		;Rp06
+	^D29*^D3		;Rp07 (300 mb)
+	^D43*^D3		;Rp07 (600 mb)
+	^D30*^D129		;Rm03
+	^D29*^D130		;Rp06+
+	^D25*^D130		;Rp20 (tops10)
+	^D6*^D514+^D5*^D130 ;Rp20 (tops20)
+
+CWFTHD:	^D20*^D130		;Rp04 full trk read hdr+data cmod=1
+	^D20*^D130		;Rp06
+	^D29*^D3		;Rp07 (300 mb)
+	^D43*^D3		;Rp07 (600 mb)
+	^D30*^D129		;Rm03
+	^D29*^D130		;Rp06+
+	-1			;Rp20 (tops10)
+	-1			;Rp20 (tops20)
+
+CWFTD:	^D20*^D128		;Rp04 full track read or write data
+	^D20*^D128		;Rp06
+	^D29*^D128		;Rp07 (300 mb)
+	^D43*^D128		;Rp07 (600 mb)
+	^D30*^D128		;Rm03
+	^D29*^D128		;Rp06+
+	^D25*^D128		;Rp20 (tops10)
+	^D6*^D512		;Rp20 (tops20)
+
+
+CWHD:	2			;Rp04 # wds in hdr if cmod=0
+	2			;Rp06
+	1			;Rp07 (300 mb)
+	1			;Rp07 (600 mb)
+	1			;Rm03
+	2			;Rp06+
+	2			;Rp20 (tops10)
+	2			;Rp20 (tops20)
+
+CWHDC:	2			;Rp04 # pdp-10 wds in hdr if cmod=1
+	2			;Rp06
+	3			;Rp07 (300 mb)
+	3			;Rp07 (600 mb)
+	1			;Rm03
+	2			;Rp06+
+	-1			;Rp20 (tops10)
+	-1			;Rp20 (tops20)
+
+;Drive timing parameters
+;Bit cell times are not stored but are mentioned here for
+;Reference. all stored data is in micro-seconds.
+;
+;	Dev	bit cell time	36-bit word time
+;	---	-------------	----------------
+;	Rp04	155 	ns	5.58	us
+;	Rp06	155	ns	5.58	us
+;300 Mb	rp07	98.914	ns	3.58	us
+;600 Mb	rp07	57.87	ns	2.08	us
+;	Rm03	103.3	ns	3.72	us
+;	Rp06+	121.47  ns	4.37 	us
+;	Rp20	104.25	ns	3.753	us  
+
+;Time for a complete revolution
+
+REVTM:	^D16667			;Rp04
+	^D16667			;Rp06
+	^D16667			;Rp07 (300 mb)
+	^D16667			;Rp07 (600 mb)
+	^D16667			;Rm03
+	^D16667			;Rp06+
+	^D16667			;Rp20 (tops10)
+	^D16667			;Rp20 (tops20)
+
+;Maximum recalibrate time
+
+RECTM:	^D500*^D1000		;Rp04		500 ms
+	^D900*^D1000		;Rp06		900 ms
+	^D900*^D1000		;Rp07 (300 mb)	900 ms
+	^D900*^D1000		;Rp07 (600 mb)	900 ms
+	^D900*^D1000		;Rm03		900 ms (unspecified)
+	^D900*^D1000		;Rp06+		900 ms (unspecified)
+	^D900*^D1000		;Rp20 (tops10)	900 ms (unspecified)
+	^D900*^D1000		;Rp20 (tops20)	900 ms (unspecified)
+
+
+;Average seek time
+
+AVSKTM:	^D28*^D1000		;Rp04		28 ms
+	^D28*^D1000		;Rp06		28 ms
+	^D23*^D1000		;Rp07 (300 mb)	23 ms
+	^D23*^D1000		;Rp07 (600 mb)	23 ms
+	^D30*^D1000		;Rm03		30 ms
+	^D28*^D1000		;Rp06+		28 ms
+	^D25*^D1000		;Rp20 (tops10)	25 ms
+	^D25*^D1000		;Rp20 (tops20)	25 ms
+
+;Maximum seek time (worse case) these stored in u-sec
+
+MXSKTM:	^D50*^D1000		;Rp04		50 ms
+	^D50*^D1000		;Rp06		50 ms
+	^D46*^D1000		;Rp07 (300 mb)	46 ms
+	^D46*^D1000		;Rp07 (600 mb)	46 ms
+	^D55*^D1000		;Rm03		55 ms
+	^D53*^D1000		;Rp06+		53 ms
+	^D50*^D1000		;Rp20 (tops10)	50 ms
+	^D50*^D1000		;Rp20 (tops20)	50 ms (unspecified...guess)
+
+;Single cylinder seek time (worse case) these stored in u-sec
+
+
+MXSCTM:	^D7*^D1000		;Rp04		7 ms
+	^D7*^D1000		;Rp06		7 ms
+	^D5*^D1000		;Rp07 (300 mb)	5 ms
+	^D5*^D1000		;Rp07 (600 mb)	5 ms
+	^D6*^D1000		;Rm03		6 ms
+	^D6*^D1000		;Rp06+		6 ms
+	^D10*^D1000		;Rp20 (tops10)	10 ms
+	^D10*^D1000		;Rp20 (tops20)	10 ms
+
+;Approx time of a sector being under the head. within 1%
+
+SECTM:	^D833			;Rp04		833 us
+	^D833			;Rp06		833 us
+	^D555			;Rp07 (300 mb)	555 us
+	^D387			;Rp07 (600 mb)
+	^D555			;Rm03		555 us
+	^D575			;Rp06+		575 us
+	^D666			;Rp20 (tops10)	666 us
+	^D2766			;Rp20 (tops20)	2.776 ms
+
+
+;Approx number of ticks of the interval timer required for
+;The secondary command of the read/write
+;Next test to complete. times were arrived at empirically
+;But are approximately equal to the time needed for the
+;Transfer plus a tolerance to allow for the possibility
+;Of defects in the media. the interval timer counts at
+;A freq. of 100khz, therefore entries are in units of 10us.
+
+RWNXTM:	-1			;Rp04
+	-1			;Rp06
+	-1			;Rp07 (300mb)
+	-1			;Rp07 (600mb)
+	-1			;Rm03
+	-1			;Rm05
+	-1			;Rp20 (tops10)
+	^D400			;Rp20 (tops20) [4,000us]
+
+
+;Drive type translator tables
+;These are for massbus disk device types. table 'typn' can
+;Be scanned for a valid massbus drive type. the index you
+;Use for getting the drive type is then used as an offset
+;Into the table 'typa' to fetch the asciz equiv msg for that type. 
+
+TYPN:	20020			;Rp04 single port
+	24020			;Rp04 dual port
+	20021			;Rp05 single port
+	24021			;Rp05 dual port
+	20022			;Rp06 single port
+	24022			;Rp06 dual port
+	20024			;Rm03 single port
+	24024			;Rm03 dual port
+	20040			;Rp07 (300 mb) single port
+	24040			;Rp07 (300 mb) dual port
+	20042			;Rp07 (600 mb) single port
+	24042			;Rp07 (600 mb) dual port
+	10061			;Rp20/dx20
+	20023			;Rp06+ single port
+	24023			;Rp06+ dual ported
+	00000			;...End of table
+
+TYPA:	[ASCIZ/RP04 SINGLE PORTED/]
+	[ASCIZ/RP04 DUAL PORTED/]
+	[ASCIZ/RP05 SINGLE PORTED/]
+	[ASCIZ/RP05 DUAL PORTED/]
+	[ASCIZ/RP06 SINGLE PORTED/]
+	[ASCIZ/RP06 DUAL PORTED/]
+	[ASCIZ/RM03 SINGLE PORTED/]
+	[ASCIZ/RM03 DUAL PORTED/]
+	[ASCIZ/RP07 SINGLE PORTED/]
+	[ASCIZ/RP07 DUAL PORTED/]
+	[ASCIZ/RP07 SINGLE PORTED/]
+	[ASCIZ/RP07 DUAL PORTED/]
+	[ASCIZ/RP20/]
+	[ASCIZ/RP06+ SINGLE PORTED/]
+	[ASCIZ/RP06+ DUAL PORTED/]
+	[ASCIZ/ -UNKNOWN DRIVE TYPE- /]
+
+
+;Worst case data patterns storage table 
+;These are the worst case patterns for magnetic storage devices
+
+DATTBL: 575333,,333333		;Worst case #1
+	777777,,777777		;Pat #2
+	565252,,525253		;Pat #3
+	365735,,673567		;Pat #4
+	633333,,155554		;Pat #5
+	326661,,533306		;Pat #6
+	466152,,330651		;Pat #7
+	070360,,741703		;Pat #8
+USERDAT:Z			;User supplied
+	Z			;Spare location
+
+
+
+
+;Ones,zeros,floating patterns that are 16 bits wide
+;Patterns are stored 2 per word and there are 34 of them
+
+CBDAT:	000000,,177777		;Zeros and ones
+	100000,,040000		;Start floating 1's
+	020000,,010000
+	004000,,002000
+	001000,,000400
+	000200,,000100
+	000040,,000020
+	000010,,000004
+	000002,,000001
+	077777,,137777		;Start floating 0's
+	157777,,167777
+	173777,,175777
+	176777,,177377
+	177577,,177677
+	177737,,177757
+	177767,,177773
+	177775,,177776
+	000000,,000000		;Optional terminator word
+
+;Standard data patterns for 18-bit wide buffers
+
+DBDAT:	0,,-1			;All zeros,,all ones
+	1,,2			;Flaoting ones pattern
+	4,,10
+	20,,40
+	100,,200
+	400,,1000
+	2000,,4000
+	10000,,20000
+	40000,,100000
+	200000,,400000
+	777776,,777775		;Start of floating zeros
+	777773,,777767
+	777757,,777737
+	777677,,777577
+	777377,,776777
+	775777,,773777
+	767777,,757777
+	577777,,377777
+	0,,0			;Zero words
+	0,,0
+	300073,,002702		;Start of parity patterns
+	557114,,240042
+	265506,,066016
+	335342,,0
+	0,,0			;End of special patterns
+				;Rest of sector may be zero
+
+		END
+  

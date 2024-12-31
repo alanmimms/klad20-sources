@@ -1,0 +1,15 @@
+ena
+opr
+set tape mta'A: unavailable being used for diagnostic dumping
+exit
+connect mordor:[latest.'B]
+assign mta'A
+r magtap
+mta'A
+1600
+get
+unload
+deassign mta'A
+@!	diagnostic successfully unloaded
+connect mordor:<latest>
+@!	ready to do next tape!!

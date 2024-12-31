@@ -1,0 +1,278 @@
+
+
+			DONE:			()means from .HST file
+						? means can't find version
+						 	in tape contents
+DAKAA	(2)	        *
+DAKAB	(2)		*
+DAKAC	(2)		*
+DAKAD	(2)		*
+DAKAE 	0.3		*
+DAKAF	(2)		*
+DAKAG	(2)		*
+DAKAH	(2)		*
+DAKAI	(2)		*
+DAKAJ	(2)		*
+DAKAL	(2)		*
+DAKAM	(2)		*
+DAKBA	(2)		*
+DAKBB	(2)		*
+DAKBC	(2)		*
+DAKBD	(2)		*
+DAKCA	(2)		*
+DAKCB	(2)		*
+DAKDA	(2)		*
+DAKDB	(2)		*
+DAKEA	0.3		*
+DAKEB	(2)		*
+DAKFA	(2)		*
+DBKAA	0.2		*
+DBKAB	0.5		*
+DBKAC -not in cabinet!-
+DBKAD	0.2		*
+DBKAE	0.2		*
+DBKAF	0.2		*
+DBKAG	0.2		*
+DBKAH	0.3		*
+DBKAI	0.3		*
+DBKAJ	0.2		*	Could not read .SEQ file from tape
+DBKAK	0.2		*
+DBKAL	0.2		*
+DBKAM	0.2		*	Could not read DBKAMM.MAC,DBKAM.A10
+DBKBA	0.2		*
+DBKBB	0.2		*	Could not read DBKBBM.MAC and others
+DBKBC	0.2		*	Could not read DBKBCM.MAC and .SEQ file
+DBKBD	0.2		*	Could not read DBKBD.TXT
+DBKCA	0.3		*
+DBKCB	0.3		*
+DBKCC	0.3		*
+DBKCD	0.3		*
+DBKCE	0.3		*
+DBKDA	0.3		*
+DBKDB	0.3		*
+DBKDC	0.2		*	Could not read some .MACs and .SAV, .SEQ
+DBKEA	0.2		*
+DBKEB	0.2		*	Could not read DBKEBM.MAC
+DBKEC	0.2		*
+DBKFA	0.2		*
+DBKFB	0.2		*	Could not read DBKFBM.MAC and DBKFB.SEQ
+DBKFC	0.2		*	Could not read .SEQ file and SUBTRN,KLDDT.A10
+DBKFD	0.2		*	Could not read DBKFDM.MAC, .SEQ file, others
+DDANA	0.2		*
+DDANB	0.4             *
+DDCPA   0.5             *
+DDDAE	0.5             *
+DDDAF	0.4             *
+DDDCA	0.3             *
+DDDFA	0.6             *
+DDDLA	0.5             *
+DDDLB	0.3             *
+DDDLH	0.2             *
+DDDMA	0.2             *
+DDDXA	0.5             *
+DDDXB	0.6             *
+DDLTA	0.1             *	Could not read DDLTA.A10
+DDIPA   0.1             *
+DDLPA	0.5             *
+DDMMC	0.2             *
+DDMMD	0.3             *
+DDPCA   0.2             *
+DDQCB	0.3 (0.13)      *
+DDQDA    ?              *
+DDQDB    ?              *
+DDQDC	0.17?           *
+DDQDF	0.16?           *
+DDQDE	0.16?           *
+DDQDG	0.16?           *
+DDQDG	0.14            (typo - same as last line)
+DDQDH	0.13 (0.3-.INP) *
+DDRHA	0.4             *
+DDRMA   0.1             *
+DDRMB   0.1             *
+DDRMC	0.2             *
+DDRPA   0.3             *
+DDRPC   0.3             *
+DDRPD   0.3             *
+DDRPE    ?              * 
+DDRPH	0.5             *
+DDRPI	0.15            *
+DDRPJ   0.1             *                
+DDRPK	0.5             *
+DDTDA	0.2             *
+DDTMA	0.2             *
+DDTMB   0.1             *
+DDTMC   0.1             *
+DDTMD	0.2             *
+DDTME	0.3             *
+DDTMF	0.2             *
+DDTMH   0.3             *
+DDTMI   0.1             *
+DDTMJ   0.1             *
+DDTMK   0.1             *
+DDTUA	0.11 (0.10)     *  (0.10)
+DDTUB	0.11 (0.10)     *  (0.10)
+DDTUG	0.5             *
+DDTUK	0.1             *
+DDVTC	0.1             *
+DDXXB	0.32            *
+DDXXC	0.13            *
+DDXYA	0.2             *
+DEDMA	0.1             *
+DEMMG	0.2             *
+DFCIA	0.5             *
+DFCIB	2.0             *
+DFCIC	0.4             *
+DFCID	2.0             *
+DFDLI	0.1             *
+DFDNA	0.2             *
+DFDRA	0.1             *
+DFDTE	0.13            *
+DFDXC	0.6(0.5-.A10)   *
+DFDXD	0.7(0.6-.A10)   *
+DFDXE	0.5(0.4-.A10)   *
+DFDXG	0.2             *
+DFKAA	0.2             *
+DFKAD   (0.2)           *(.HST file seems to be for a different diagnostic)
+DFKBA	1.1             *
+DFKBB	0.2             *
+DFKCA	0.2             *
+DFKCB	0.1             *
+DFKCC	0.2             *
+DFKDA	0.5             *
+DFKEA	0.5             *
+DFKEB	0.3             *
+DFKEC	0.2             *
+DFKDF                  (NOT FOUND)
+DFKED	0.3             *
+DFMMH	0.11            *
+DFNIA	0.3             *
+DFNIB	0.4             *
+DFNID	0.1             *
+DFNIE	0.3             *
+DFNIS	0.4             *
+DFPTA	0.5             *
+DFQAAC 000.003          *
+DFQABA	0.1             *
+DFQDA	0.1?            *
+DFQDI   4(0)            *
+DFQDJ	0.3?            *
+DFQDL   4(0)            *
+DFRHB	0.14            *
+DFRPJ   0.1             *
+DFRPH	0.6             *
+DFRPK	0.6             *
+DFRPM	0.3             *
+DFRPN	0.4(0.3-.A10)   *
+DFRSA	0.1             *
+DFSXA	0.10            *
+DFTUE	0.12            *
+DFTUI	0.3(2.0-.A10)   *
+DFTUJ	0.3(0.2-.A10)   *
+DFTUK	0.3             *
+DGDTE	0.15            *
+DGKAA	0.11            *
+DGKAB	0.13            *
+DGKBA	0.11            *
+DGKBB	0.11            *
+DGKBC	6.10(?)(0.10)   *
+DGKBD	0.14            *
+DGKBE	0.11(0.12)      *
+DGKCA	0.10            *
+DGMCA	0.13(1.10 IN BOX)*(0.13 appears to be correct-JBP)
+DGMCB	1.10            *
+DGMMA	0.3             *
+DGQDA	0.17?           *
+DGQDF   (0.3-.INP)      *
+DGQEA 	?(Tape also includes: DGQDF, DGQDG) *		Joe says:
+						   {built [LATEST.DGQEA] }    *
+						   {built [LATEST.DGQDG] }    *
+DGQFA	0.11           *
+DGQFB	0.7            *
+DGSBA	0.2            *
+DHKAA	0.2            *
+DHKAB	0.4            *
+DHKBA	0.5            *
+DHKBB	0.2            *
+DHKBC	0.3            *
+DHKBD	0.6            *
+DHKBF	0.4            *
+DHKBG	0.5            *
+DHKBH	0.2            *
+DHKCA	0.2            *
+DHMCA	0.3            *
+DHMCB	0.4            *
+DHMCC	0.2            *
+DHQFA	0.3            *
+DXDAA	0.2            *
+DXDAG	0.9            *
+DXDAH	0.9            *
+DXDLC	0.3            *
+DXDLJ	0.1            *
+DXDMC	0.2            *
+DXLPB	0.10           *
+DXLPRA	0.1            *
+DXMCD	0.3            *
+DXMCE	0.3            *
+DXMPA	0.15           *
+DSANA	0.2		*
+DSANB	0.1(0.2)	*
+DSCDA	0.2		*
+DSDUA	0.2		*
+DSDZA	0.2		*
+DSKAA	0.1	       *
+DSKAB   0.1            *		
+DSKAC   0.1            *		
+DSKAD	0.1		*
+DSKAE	0.1		*
+DSKAF	0.1		*
+DSKAG	0.1		*  Use MAGTAP if SMTAPE doesn't work on DS??? tapes
+DSKAH	0.1		*
+DSKAI	0.1		*
+DSKAJ	0.1		*
+DSKAK	0.1		*
+DSKAL	0.1		*
+DSKAM	0.1		*
+DSKBA	0.1		*
+DSKCA	0.1		*
+DSKCB	0.1		*
+DSKCC	0.1		*
+DSKCD	0.1		*
+DSKCE	0.1		*
+DSKCF	0.3		*
+DSKCG	0.2		*
+DSKDA	0.2		*
+DSKEA	0.1		*
+DSKEB   0.1              *
+DSKEC   0.2              *
+DSKFA   0.1              *
+DSKMA   0.1             *
+DSLPA   0.7 ALSO DXLPB  .10 	"READ ERROR FROM SMTAPE.MTA"
+DSLTA   0.2             *
+DSMMA	0.2		*
+DSMMB			*
+DSMMC	0.2		*
+DSMMD	0.13		*
+DSPCA			*
+DSPCB			*
+DSRHA			*
+DSRMA	0.2		*
+DSRMB	0.3		*
+DSRPA	0.3		*
+DSTUA			*
+DSTUB			*
+DSUBA			*
+SMBC2	0.1		*
+SMDDT	0.3		*
+SMFILE			*
+SMMAG	0.3		*
+SMMON	0.3		*
+SMTAPE	0.3		Can't find in cabinet
+SUBSM	0.3		*
+MEMLOAD	0.11		*
+AJADCA			*
+FORMAT	1		READ ERROR for MAGTAP.MTA
+DSTIRS	5.2		* (also is a version 4.2 on next tape, not dumped) 
+8080/KS10 CONSOLE CODE	5.2   NO EOT!	(ditto above comment about DSTIRS)
+ROMGEN	2m(2)		READ ERROR for MAGTAP.MTA
+
+

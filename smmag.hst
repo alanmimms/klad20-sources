@@ -1,0 +1,36 @@
+
+		HISTORY FILE FOR DSQDD - SMMAG
+		------------------------------
+
+---------------------------------------------------------------
+
+CODE:		MAINDEC-10-DSQDD (SMMAG)
+
+TITLE:		DECSYSTEM 2020 MAGTAPE DIAGNOSTIC MONITOR
+
+VERSION		0.3
+
+DATE:		APRIL 1979
+
+REASON:		UPDATED TO CORRECT A PROBLEM WITH THE "FREAD" OPERATION
+		AND THE CACHE.
+---------------------------------------------------------------
+
+VERSION:	0.2
+
+DATE:		DECEMBER 1978
+
+REASON:		UPDATED TO PROVIDE AUTOMATIC COMMAND FILE SELECTION TO 
+		IMPROVE EASE OF OPERATION.  ADDED CAPABILITY OF ONE COMMAND
+		LIST TO CALL ANOTHER.  FIXED PROBLEM WITH TM03 SELECTION.
+		ADDED MAINTENANCE MODE OPERATION.
+		ADDED "SMBC2" TO MAGTAPE.
+---------------------------------------------------------------
+
+VERSION:	0.1
+
+DATE:		MARCH 1978
+
+REASON:		ORIGINAL RELEASE OF THIS PROGRAM FOR KS-10.
+---------------------------------------------------------------
+

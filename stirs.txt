@@ -1,0 +1,818 @@
+
+                     TABLE OF CONTENTS
+                     ----- -- --------
+
+							      PAGE
+							      ----
+1.  ABSTRACT							2
+
+2.  RUN-TIME REQUIREMENTS					2 *
+
+3.  PRODUCT USERS AND USES					2
+
+4.  PROGRAM STRUCTURE						2
+  4.1  MODULE ORGANIZATION					2
+  4.2  CREATING THE '.EXE' FILE					3
+  4.3  VERSION AND EDIT NUMBERS					3 *
+
+5.  FAULT ISOLATION						3
+  5.1  FAULT ISOLATION ALGORITHM				4
+  5.2  PROGRAM IMPLEMENTATION					4
+
+6.  ERROR MESSAGES						6
+  6.1  MESSAGE FORMAT						6 *
+  6.2  MESSAGE FILE FORMAT					6
+  6.3  SPECIAL PRINTING WITHIN ERROR MESSAGES			7
+  6.4  GENERATION OF MESSAGE FILE				7
+
+7.  GENERATION OF DATA MODULE					8
+
+8.  TEST DISPATCHING						9
+
+9.  TROUBLE-SHOOTING WITH STIRS					10 *
+  9.1  SELECTABLE PROGRAM FEATURES				10 *
+  9.2  LOOPING ON ERROR						11 *
+  9.3  GENERAL HINTS						12 *
+
+10.  MISCELLANEOUS						12
+  10.1  ABORTS TO 'CSL'						12
+  10.2  'CSL' DEBUGGING FEATURES				12 *
+  10.3  8080 ERROR RESPONSES					13
+  10.4  REQUIRE FILES						14
+  10.5  MICRODIAGNOSTIC CODING					14
+  10.6  SENDING 8080 COMMANDS					14
+
+11.  OPERATING PROCEDURES					15 *
+  11.1  RUNNING THE STIRS PROGRAMS				15 *
+  11.2  RUN-TIMES						16 *
+
+12.  PROGRAM RELEASE						16 *
+
+
+* = sections of interest to a user
+User/Maintainer Documentation for STIRS			Page 2
+
+
+1.  ABSTRACT
+    --------
+
+  STIRS (STImulus ReSponse)  diagnostics are programs  which are used  to
+  facilitate board repair at the  KS10 Quick Verify (QV) stations.   They
+  provide detailed  error  printouts  plus  a  list  of  possible  faulty
+  networks on the board.  There are 5  STIRS programs, one for each of  5
+  KS10 boards.
+
+	Program		Board
+	-------		-----
+	MSCSL		M8616 (CSL)
+	MSMMC		M8618 (MMC)
+	MSDPE		M8620 (DPE)
+	MSDPM		M8621 (DPM)
+	MSCRA		M8622 (CRA)
+
+  The STIRS  programs are  coded in  BLISS-36 and  run in  a  remote-host
+  TOPS20 system under the DECsystem-2020 Diagnostic Console Program, CSL.
+  They stimulate the board under test by sending commands through the CSL
+  program over the  KLINIK line to  the KS10 8080  console program.   The
+  8080 console program executes the commands and responds back to the CSL
+  program which returns any response data to the STIRS program.
+
+2.  RUN-TIME REQUIREMENTS
+    -------- ------------
+
+  - The  KS10 under  test must  contain  system REV  2 level  boards  and
+  version 4.2, or  later, of  the 8080 EPROM  code.  Future  REVs of  the
+  machine which do not change the logic will still allow STIRS to be run.
+
+  - Each STIRS program assumes that all boards except the one under  test
+  are fault-free.  If this is not true, then the error printouts will  be
+  misleading.
+
+3.  PRODUCT USERS AND USES
+    ------- ----- --- ----
+
+  STIRS are used primarily by manufacturing as a board repair tool at the
+  QV stations.   However,  field  service  has the  option  to  use  them
+  provided they have a host TOPS20 system and can identify which board is
+  faulty.
+
+4.  PROGRAM STRUCTURE
+    ------- ---------
+
+4.1  MODULE ORGANIZATION
+     ------ ------------
+
+  For each board  there are 'MSxxx.EXE' and 'MSxxx.MSG' files, where  xxx
+  is the board  name  - CSL, MMC,  DPE, DPM, or CRA.   The MSG files  are
+User/Maintainer Documentation for STIRS			Page 3
+
+
+  described in the section on message files.  The EXE files are generated
+  by  linking  together   the  '.REL'  files   for  the  Control   Module
+  (MSSTRC.REL),  the  Test  Module  (MSxxxT.REL),  and  the  Data  Module
+  (MSxxxD.REL).  The Control  Module is identical  for all programs.   It
+  contains the fault isolation  routines, the test dispatching  routines,
+  the error reporting routines, routines to create 8080 command  strings,
+  and other  general purpose  routines.  The  Test Module  contains  some
+  special purpose routines plus a routine for each diagnostic test.   The
+  Data Module contains all  the fault isolation  bitvectors and the  test
+  dispatch table.
+
+4.2  CREATING THE '.EXE' FILE
+     -------- --- ------ ----
+
+  To create the executable file for  a STIRS diagnostic, the 3 modules  -
+  control, test and data - must be linked together.  The start address is
+  'CONTROL', which is  the main  control routine in  the control  module.
+  Since the diagnostics get loaded into  the block of memory from  200000
+  to 377777 by  the 'CSL' program,  the linked modules  are relocated  to
+  begin at location 200000.  The command line to LINK is:
+
+	@LINK
+	*MSxxx.EXE/SAVE=/SEGMENT:LOW/SET:.LOW.:200000,MSSTRC/START:CONTROL,
+	MSxxxT,MSxxxD/GO
+
+4.3  VERSION AND EDIT NUMBERS
+     ------- --- ---- -------
+
+  Each of  the program  modules has  its own  version and  edit  numbers.
+  These numbers are displayed in the program header which is printed when
+  the STIRS program is initially started.  The format is 'x.y' where x is
+  the edit  number and  y is  the version  number.  An  example is  shown
+  below.
+
+	CSL>STIR CSL
+	KS10 STIMULUS-RESPONSE DIAGNOSTIC FOR THE M8616/CRA BOARD
+	CONTROL MODULE 0.1     TEST MODULE 0.2    DATA MODULE 0.1
+
+5.  FAULT ISOLATION
+    ----- ---------
+
+  A STIRS diagnostic attempts to isolate failures to a functional network
+  on the board being tested.  Each  board has been divided into  networks
+  by the  responsible diagnostic  programmer.  These  networks vary  from
+  being a single logic gate  to containing numerous gates  interconnected
+  to perform a single function.  A set of engineering prints for each  of
+  the boards has been marked up to define and name each network.
+User/Maintainer Documentation for STIRS			Page 4
+
+
+5.1  FAULT ISOLATION ALGORITHM
+     ----- --------- ---------
+
+  The objective is to identify the network or networks which contain  the
+  fault.  (The  assumption  is  that  there is  only  one  stuck-at-0  or
+  stuck-at-1 fault present).  For each error, there is a set of  networks
+  which  could  have  contained  the  fault  which  caused  that   error.
+  Therefore, each  error  check  in  a test  has  an  associated  set  of
+  possibly-faulty networks.  Conversely, in some cases a lack of an error
+  implies that a set of networks are fault free.  Hence, these 'no error'
+  cases have an associated set of not-possibly-faulty networks.
+
+  Initially, all networks are  considered possibly faulty.  Networks  get
+  eliminated from being considered possibly  faulty in two ways.   First,
+  if a error check or series of error checks is done with no error  being
+  detected.   This  will  eliminate  those  networks  contained  in   the
+  not-possibly-faulty set  associated  with  the  'no  error'  condition.
+  Second, if an error  check detects an error.   This will eliminate  all
+  networks which are not in the possibly-faulty set associated with  that
+  error check.  As  tests are  run and  error and  'no error'  conditions
+  occur, the cumulative set of possibly faulty networks will converge  on
+  a small subset (hopefully, one) which contains the fault.
+
+5.2  PROGRAM IMPLEMENTATION
+     ------- --------------
+
+  The fault isolation  algorithm is implemented  using bitvectors.   Each
+  bit in the bitvector  corresponds to a network.  There is a  cumulative
+  possibly-faulty bitvector which is initialized to all ones.  Each error
+  check and  'no error'  condition has  a bitvector  associated with  it.
+  When an error is detected, the corresponding error bitvector is 'ANDed'
+  with the cumulative bitvector.  This has the effect of leaving set only
+  those bits corresponding to the networks which could be faulty.  When a
+  'no error' condition occurs, the corresponding 'no error' bitvector  is
+  complemented then 'ANDed' with the cumulative bitvector.  This  has the
+  effect of clearing all bits corresponding  to  networks which are fault
+  free.  After all the tests have been run, the cumulative bitvector will
+  have a subset of bits set which identify the possibly faulty networks.
+User/Maintainer Documentation for STIRS			Page 5
+
+
+  The error and  'no error' bitvectors  are defined in  the Data  Module.
+  They are contained in data structures which are accessed by test number
+  and error/no-error number.
+
+
+		+-------+
+	ES_TBL  !       !
+		!-------!	  +-------+
+		!   *---+-------> !       !
+		!-------!	  !-------!	    +-------+
+		!       !	  !   *---+-------> !       !
+		!-------!	  !-------!	    !-------!
+		!   .   !	  !       !	    !       !
+		!   .   !	  !   .   !	    !-------!
+		!   .   !	  !   .   !	    !       !
+		!       !	  !   .   !	    !-------!
+		+-------+	  !       !	    !       !
+            TABLE OF POINTERS	  +-------+	    +-------+
+	     INDEXED BY TEST    TABLES OF PTRS        ERROR
+		 NUMBER		  INDEXED BY	    BITVECTOR
+				 ERROR NUMBER
+
+
+  When an  error is  detected the  error  number is  passed to  an  error
+  handler routine. The  test and  error numbers  are used  to index  into
+  tables in the  Data Module to  obtain the error  bitvector.  The  table
+  structure is shown above.  'No error' conditions are handled similarly,
+  as shown below.
+
+
+		+-------+
+       NES_TBL  !       !
+		!-------!	  +-------+
+		!   *---+-------> !       !
+		!-------!	  !-------!	    +-------+
+		!       !	  !   *---+-------> !       !
+		!-------!	  !-------!	    !-------!
+		!   .   !	  !       !	    !       !
+		!   .   !	  !   .   !	    !-------!
+		!   .   !	  !   .   !	    !       !
+		!       !	  !   .   !	    !-------!
+		+-------+	  !       !	    !       !
+            TABLE OF POINTERS	  +-------+	    +-------+
+	     INDEXED BY TEST    TABLES OF PTRS     'NO ERROR'
+		 NUMBER		  INDEXED BY	    BITVECTOR
+			      'NO ERROR' NUMBER
+User/Maintainer Documentation for STIRS			Page 6
+
+
+6.  ERROR MESSAGES
+    ----- --------
+
+6.1  MESSAGE FORMAT
+     ------- ------
+
+  When an error is detected, an error message is printed on the TTY.  The
+  general format is:
+
+  STIMULUS:
+	  (text)
+  RESPONSE:
+	  (text)
+  CORRECT: (data)
+  ACTUAL:  (data)
+  DISCREP: (data)
+
+
+  The correct and  actual data are  only printed when  applicable to  the
+  type of error.
+
+6.2  MESSAGE FILE FORMAT
+     ------- ---- ------
+
+  The error  messages  are arranged  sequentiallly  by test  and  message
+  numbers.  Each message  is preceded  by the key-character  '[' and  the
+  associated message number.  Each set of messages for a test is preceded
+  by the  key-character ']' and the  associated test number.  The text of
+  the error message is delimited by the key-character '!', as shown below.
+
+  ]1				(Test Number 1)
+  [1				(Message Number 1)
+  !STIMULUS:
+	.
+	.			(Message for Test 1 Error 1)
+	.
+  !
+  [2				(Message Number 2)
+  !STIMULUS:
+	.
+	.			(Message For Test 1 Error 2)
+	.
+  !
+  ]2				(Test Number 2)
+  [1				(Message Number 1)
+  !STIMULUS:
+	.
+	.			(Message For Test 2 Error 1)
+	.
+  !
+User/Maintainer Documentation for STIRS			Page 7
+
+
+6.3  SPECIAL PRINTING WITHIN ERROR MESSAGES
+     ------- -------- ------ ----- --------
+
+  To allow flexibility in printing a  text or data field within an  error
+  message, a special printing capability is provided.  It is used  mainly
+  to vary a field  in a message  when the same message  is used for  more
+  than one error.  Such is often the case when error checks appear within
+  a program loop which is testing data patterns or such.  The format  for
+  specifying a variable field within  a message is the key-character  '\'
+  followed by a print mode character,  followed by an index digit  (0-9).
+  The  print  mode  character  dictates  the  type  of  special  printing
+  required.  The index  digit is used  as an index  into a special  print
+  table.  The pointer to that table is passed as a parameter to the error
+  handling routines. 
+
+  PRINT MODE	ACTION
+  ----------	------
+       O	Print table entry as octal number
+       D	Print table entry as decimal number
+       S	Print ASCIZ text string pointed to by table entry
+       U	Print table entry as 12 unsigned octal digits
+
+  Note: Modes O and D will suppress leading zeros.
+
+6.4  GENERATION OF MESSAGE FILE
+     ---------- -- ------- ----
+
+  Error messages  exist as  comments  in the  source  file for  the  Test
+  Module.  They are distinguished from other comments in that they always
+  begin in column  one and  they have the  key-character '*'  immediately
+  following the comment delimiter.  They appear with the test (and  often
+  the error) to which they apply.   In this way they serve as  additional
+  test documentation and, more importantly, they are directly  associated
+  with the tests.  If tests are rearranged, added, or deleted, the  error
+  messages track the tests.  An example of the message comment format  is
+  shown below.
+
+      ERR(1);				!call to error handler - error #1
+	.
+	.
+	.
+
+  !*MESSAGE 1
+  !*STIMULUS:
+  !*	(text)
+  !*	  .
+  !*	  .
+  !*RESPONSE:
+  !*	(text)
+  !*	  .
+  !*	  .
+User/Maintainer Documentation for STIRS			Page 8
+
+
+  To generate  the  message file  from  these source  comments  a  SNOBOL
+  program called 'MSGGEN.SNO' is used.  The  input to the program is  the
+  Test Module source code (MSxxxT.B36, where xxx is the module name)  and
+  the output is the message file (MSxxx.MSG).  An example is shown below.
+
+	@20SNOB
+	SNOBOL>MSGGEN
+	INPUT FILE: MSCSLT.B36
+	OUTPUT FILE: MSCSL.MSG
+	FILE MSCSL.MSG IS OUTPUTTED AND CLOSED
+	SNOBOL>
+
+
+7.  GENERATION OF DATA MODULE
+    ---------- -- ---- ------
+
+  The Data Module is generated by appending a file called 'MSxxxD.END' to
+  a file called 'MSxxxD.BEG'.   The beginning file 'MSxxxD.BEG'  contains
+  macro definitions which associate each network  name with a bit in  the
+  bitvector.  Each symbolic  network name  which appears  in the  network
+  list in the test module source file becomes a macro in the data module.
+  For the  cases where  more than  one bit  is associated  with the  same
+  network  name,  the  bits  should  be  arranged  contiguously  in   the
+  bitvector.  This will  prevent the  same name from  being printed  more
+  than once in the list of possible faulty networks.
+
+  The ending  file 'MSxxxD.END'  contains  plit-data information  and  is
+  generated from the Test Module source  file.  Each error check and  'no
+  error' condition has a set of networks associated with it.  The sets of
+  networks  are   specified  in   specially  formatted   comments.    The
+  association is made through error and 'no error' numbers. An example is
+  shown below.
+
+
+    ERR(1);			!Call to error handler - Error #1
+	.
+	.
+	.
+
+  !]ERROR 1
+  !]READ_MUX XCVR PAR_NET NTWK
+
+  The key-character ']'  following the comment  delimiter '!'  identifies
+  the comment as one which  contains network information.  Such  comments
+  are always occur in pairs - the first identifying the error number  and
+  the second containing the network list.  The network list consists of a
+  sequence of symbolic network names separated by spaces ending with the
+  key-name 'NTWK'.
+User/Maintainer Documentation for STIRS			Page 9
+
+
+  These network lists  are converted into  bitvectors with the  aid of  a
+  SNOBOL utility program, 'DATGEN.SNO'.   The 'DATGEN' program takes  the
+  test  module  source  file   as  its  input   and  generates  a   file,
+  'MSxxxD.END', which is the plit-data portion of the Data Module  source
+  file.  It scans the  input file for the  network lists and creates  the
+  linked plit structures  for the  error and 'no  error' bitvectors.   It
+  also creates  the  test  dispatch  table.   This  consists  of  a  plit
+  structure with each entry being the  start address of a test (the  test
+  routine name). An example is shown below.
+
+	@20SNOB
+	SNOBOL>DATGEN
+	INPUT FILE: MSCSLT.B36
+	OUTPUT FILE: MSCSLD.END
+	FILE MSCSLD.END OUTPUTTED AND CLOSED
+	SNOBOL>
+
+NOTE:   The SNOBOL program seems  to randomly set bit  35 in some of  the
+  words which get output  for the MSxxx.END file.   This bits will  cause
+  BLISS to give error messages.  To clear them a special utility  program
+  was written by Ed Prentice.   It is called CLRB35  and is run as  shown
+  below.
+
+	@RUN CLRB35
+	INPUT FILE:MSCRAD.END
+	BITS CLEARED IN MSCRAD.END.47 = 128
+
+
+8.  TEST DISPATCHING
+    ---- -----------
+
+  Unless the  'LOOP ON  TEST' feature  is activated,  the tests  are  run
+  sequentially  from  a  dispatch   table.   However,  when  the   'FAULT
+  ISOLATION' feature is activated, not all tests may be run.  To  shorten
+  program run  time,  tests  which  will  not  contribute  to  the  fault
+  isolation are not run.   Before each test  is run, a  check is made  to
+  determine whether or not the test is worth running.  The check consists
+  of comparing the error  and 'no error'  bitvectors associated with  the
+  test against  the  cumulative possibly-faulty  network  bitvector.   If
+  there is  no overlap  between  them, then  running  the test  will  not
+  eliminate any  networks from  the possibly-faulty  bitvector.  This  is
+  also true if the cumulative bitvector is a subset of each of the test's
+  bitvectors.  In both these cases, the test is not run.
+User/Maintainer Documentation for STIRS			Page 10
+
+9.  TROUBLE-SHOOTING WITH STIRS
+    ---------------- ---- -----
+
+9.1  SELECTABLE PROGRAM FEATURES
+     ---------- ------- --------
+
+  There are several selectable  program  features  which  give  the  user
+  flexibility in running the STIRS programs.  Each  time  the  program is
+  started, a list of  the features which are activated is  printed on the
+  TTY.  The user is then  asked  if he/she wishes to change the activated
+  features.  If yes, then the user is asked if he/she wishes to  activate
+  each feature, one at a time.  Some  features  are  peculiar  to a given
+  program, such  as  inhibiting  DROM  contents  checking  (MSDPE).   The 
+  features which are  common to all  programs and are  maintained by  the
+  Control Module are:
+
+  BELL ON ERROR	  - Rings TTY bell when an error is detected.
+
+		    Default is not to ring bell.
+  
+  LOOP ON ERROR	  - Loops on first error  which occurs.  The sequence of
+		    8080 command strings which stimulated the error gets
+		    sent to the 8080 indefinitely.  Control-C exits back
+		    to 'CSL' command level.
+
+		    The default is not to loop on error.
+
+  FAST LOOPING	  - Enables error  looping  at the 8080.  This feature is
+		    meaningful only if 'LOOP ON ERROR' is  activated.  It
+		    causes a command  line to be sent to the  8080  which
+		    ends  with  a 'RP' command.  This  forces the 8080 to
+		    indefinitely  repeat  execution of the command  line.
+		    It provides a much tighter  scope loop.  However, the
+		    8080 becomes effectively  hung  and  will  no  longer
+		    respond to 'CSL' communications. A detailed procedure
+		    in printed on the TTY telling the  user how to resume
+		    normal testing.
+
+		    The default is no fast looping.
+
+  LOOP ON TEST	 -  Forces  looping  on  a  specified  test.   The   user
+		    specifies a  test  number which  gets  dispatched  to
+		    directly and gets  repeated indefinitely.   Control-C
+		    exits to 'CSL' command level.
+
+		    The default is not to loop on test.
+
+  FAULT ISOLATION - Allows user to select whether or not fault  isolation
+		    will be  performed.   Since isolation  also  includes
+		    skipping of unnecessary tests, this features is  used
+		    mainly to force the running of all the tests.   Also,
+		    no list of possible faulty networks is printed.
+
+		    The default is to perform fault isolation.
+User/Maintainer Documentation for STIRS			Page 11
+
+
+ SINGLE STEPPING  - Allows user to single step the  diagnostic  microcode
+		    or the system clock.  Through detailed prompting, the
+		    user can execute up to  the maximum number of  micro-
+		    instructions or clock ticks  required in the test  in
+		    any    desired    quantities.     After     microcode
+		    single-stepping, the results of  an 'EJ' command  are
+		    printed.  After  system  clock  single-stepping,  the
+		    contents  of  8080  register  303  is  printed.  This
+		    feature is meaningful only if the 'LOOP ON ERROR'  or
+		    'LOOP ON TEST' features are activated.
+
+		    The default is not to single step.
+
+  TEXT INHIBIT 	  - Inhibits printing of error  message text.  With  this
+		    feature activated, only  the test  and error  numbers
+		    and the correct and actual data (if any) are printed.
+
+		    The default is not to inhibit text printing.
+
+  LOOP ON PROGRAM - Forces entire program to be repeated indefinitely.
+		    Control-C exits to 'CSL' command level.
+
+		    The default is not to loop on program.
+
+  PRINT TEST #'S  - Causes the message 'STARTING TEST #xxx' to be printed
+		    before each test is executed.  This is useful to  get
+		    a history of which tests  are getting run when  fault
+		    isolation is activated.
+
+		    The default is not to print the test numbers.
+
+
+9.2  LOOPING ON ERROR
+     ------- -- -----
+
+  If the 'LOOP ON ERROR' feature is  activated  and an error is detected,
+  the  STIRS  program  will  loop   on   that  error.   This  looping  is
+  accomplished by  jumping back to a point in the test  which will result
+  in the same stimulus  sequence  to  occur.  This  means  that  the same
+  command line  or lines  will  be  repeatedly  sent  to the 8080 until a
+  Control-C is  typed.  Since  the  sending  of  command  lines  involves
+  transmitting over a link  which at best is  running  at 9600 baud,  the
+  resulting scope loop may sometimes be to long to be useful.  In certain
+  cases, this  situation  can  be  improved.   If possible,  the stimulus
+  sequence can be sent on a single  command line terminated with a repeat
+  command, 'RP'.  This will cause the looping to be executed by the 8080,
+  thus eliminating the  repetitive command  line  transmission.  However,
+  this approach cannot be used if  the stimulus  requires  more than  one
+  command line or if the command line includes a command which stimulates
+  a response from the 8080 to the host.  When the 8080 is executing  this
+  repeat loop, it no longer looks at the KLINIK line.  This means that to
+  resume communication with the  host, the user must  reset the KS10  and
+  re-establish the link.  Directions on how to do this are printed on the
+  TTY when this fast looping is started. 
+User/Maintainer Documentation for STIRS			Page 12
+
+
+9.3  GENERAL HINTS
+     ------- -----
+
+  1.  Errors which  involve  execution  of  diagnostic  microcode  or
+      single ticking of the system clock do not lend themselves  very
+      well to  scope looping.   (The  KLINIK line  transmission  time
+      makes the  loop time  too  long to  be useful).   Instead,  the
+      user-controlled single-stepping  feature should  be used.   The
+      user can specify the exact  number of micro-instructions to  be
+      executed or clock ticks to  be generated.  After which,  he/she
+      can scope  the  static  condition  of  the  logic.   The  error
+      printout will  contain  information concerning  the  number  of
+      instructions or ticks  involved in  the test  and the  expected
+      state of key logic signals.
+
+  2.  With fault isolation turned  on, all tests  will not always  be
+      run.  To force running of all tests, inhibit fault isolation.
+
+10.  MISCELLANEOUS
+     -------------
+
+10.1  ABORTS TO 'CSL'
+      ------ -- -----
+
+  There are several  conditions  which can occur when running the STIRS
+  programs which will pre-emptively abort testing and return control to
+  the 'CSL' program:
+
+    1.  The user is single-stepping the diagnostic micro-code and
+	responds that he/she does not wish to continue testing.
+
+    2.  A fault isolation discrepancy occurs.  This  happens  when an
+	error check or no error  condition  results in the cumulative
+	possibly-faulty network bitvector to become all zeros. Before
+	returning to 'CSL', the list of  possibly-faulty  networks is
+	printed as it was before it became zeroed.
+
+    3.  An unexpected error response is received from the 8080.
+
+    4.  The program fails to synchronize the KS10 system clock in
+	maintenance mode.
+
+10.2  'CSL' DEBUGGING FEATURES
+      ----- --------- --------
+
+  There are  3  features  of  'CSL'  which  are  particularly  useful  in
+  debugging STIRS programs.
+
+    1.  Logging - By typing 'LOG YES', the 'CSL' program  will create a
+	log file which contains everything that gets printed on the TTY,
+	both  input and output.  The file is called 'CSLxxx.LOG', where
+	xxx is the line number of the line connected to the KS10.
+User/Maintainer Documentation for STIRS			Page 13
+
+
+    2.  STIR Mode - By typing 'DEBUG SET STIR', all communication sent
+	and received over the KS10 link is printed on the TTY. This is
+	useful in seeing exactly what command lines are being sent and
+	what responses are being received.
+
+    3.  Debug Maint Mode - When running from a TTY connected to a host
+	TOPS-20 system, type 'MM' in response  to  the question asking
+	what link your  using and then type 'DEBUG SET MM'.  This will
+	put you in a debugging  mode  which allows you to simulate the
+	8080 responses.  There are 2 types of responses which you must
+	simulate - those  that  do not involve data and those that do.
+	To simulate a non-data response, type
+
+		 'CONTROL-A' 'UPPERCASE A' 'ALTMODE'
+
+	To simulate a data response, type
+
+	    'CONTROL-A' 'CONTROL-A' 'Z' 'Z' 'DATA' 'CARRIAGE RETURN'
+
+	Where data is the exact response the 8080 would give, i.e.,
+	what the 8080 would type on the cty.  for example,
+
+	Command Line:	LR210,DR100,DR0
+	Response:	^A A $
+
+	Command Line:	LR210,DR100,ER303
+	Response:	^A ^A Z Z 303/000 <CR>
+
+10.3  8080 ERROR RESPONSES
+      ---- ----- ---------
+
+  There are  2  types  of  error  responses  possible  from  the  8080  -
+  synchronous and asynchronous.  Synchronous  errors are those which  are
+  given in direct response to a  command.  For example, if the 8080  does
+  not receive  a data  acknowledge in  when executing  an examine  memory
+  command (EM), it will respond with  an '?NDA' error message instead  of
+  the memory contents.  Asynchronous errors are those which are  detected
+  by the 8080  while it  is executing its  idle loop.   They are:  MEMORY
+  REFRESH ERROR, PARITY ERROR and  CPU HALTED.  These error messages  are
+  sent to 'CSL' asynchronously and they remain in the input buffer  until
+  the next command line is to be sent.
+  
+  Sometimes  an  error  response  is  expected.   In  fact,  a  test  may
+  intentionally stimulate an  error response.  In  these cases, the  test
+  can set a flag ('RPT_ERR_FLAG') which will cause the error response  to
+  be ignored.  In the case of an asynchronous error message, a routine is
+  provided which will look for a specified message and flush it from  the
+  'CSL' input buffer. 
+User/Maintainer Documentation for STIRS			Page 14
+
+
+10.4  REQUIRE FILES
+      ------- -----
+
+  There are 4 BLISS REQUIRE files which are used by the various  modules.
+  They are:
+
+  KSU.R36	- contains macro definitions necessary to write KS10
+		  microcode plits.
+  STIRSD.R36	- contains linkages between control module and test module.
+  REGBIT.R36	- contains bit definitions for 8080 I/O registers.
+  CSLMAC.R36	- contains macros for invoking LUUO's to 'CSL'.
+
+10.5  MICRODIAGNOSTIC CODING
+      --------------- ------
+
+  The microdiagnostic  code appears  in the  test module  source file  as
+  PLITs.  Using BLISS  macros, a mini  cross-assembler was created  which
+  allows the programmer to write KS10 microcode symbolically in the  same
+  way that the  system microcode  is written  using MICRO.   The 96  bits
+  worth of microcode  is put  into 3 36-bit  words using  the BLISS  PLIT
+  structure.    The   pointer   to   the   PLIT   and   the   number   of
+  micro-instructions contained in it are passed to the CSL program.   CSL
+  then converts the data into LC, DC and DN commands to the 8080 to  load
+  the microcode.  An example of a microcode PLIT is shown below.
+
+    BIND
+	UCODE = PLIT(U_J(1) U_SPEC_N(102) U_DBM_N U,
+		     U_J(2) U_DBUS_RAM U_LOADFE U);
+
+  The 'U_' fields are  macros which setup  compiletime constants.  The  U
+  macro assembles the compiletime constants into the desired 3-word  PLIT
+  item.
+
+10.6  SENDING 8080 COMMANDS
+      ------- ---- --------
+
+  To decrease transmission time over  the KLINIK line, the STIRS  program
+  packages  the  8080  commands  with   no  spaces  between  fields   and
+  concatenates as many  commands as  possible on a  single command  line.
+  This  decreases  transmission  time   by  minimizing  the   handshaking
+  overhead.  For example, the sequence of commands
+
+	LR 210
+	DR 100
+	ER 3
+
+  will get sent as
+
+	LR210,DR100,ER3
+User/Maintainer Documentation for STIRS			Page 15
+
+
+11.  OPERATING PROCEDURES
+     --------- ----------
+
+11.1  RUNNING THE STIRS PROGRAMS
+      ------- --- ----- --------
+
+  The STIRS  programs are  loaded  and run  under  control of  the  'CSL'
+  program, which in turn runs  under the TOPS-20 operating system.   They
+  can be run  from the KS10  CTY or from  a TTY connected  to the  remote
+  host. To run from the CTY:
+
+	1. Get to KS10 prompt level
+	2. Type "MM".  This puts the 8080 into maintenance mode.
+	3. Type 'Control-C'.  This will get you to monitor prompt
+	   level on the host TOPS-20 system.
+	4. Log in, if you are not already logged in.
+	5. Run the 'CSL' program.
+	6. In response to the 'CSL' question about which link, type
+	   'MM'.  This puts you into 'CSL' prompt level.
+	7. Type 'STIR xxx', where xxx identifies the board to be
+	   tested.
+
+  Example:
+
+	KS10>MM
+	^C
+
+	SYSTEM XXX BLAH BLAH BLAH
+	@LOGIN USER
+		.
+		.
+	@RUN CSL
+
+	DECSYSTEM-2020 DIAGNOSTIC CONSOLE PROGRAM
+	VERSION XXX.X
+	[FOR HELP TYPE "HELP"]
+	LINE NUMBER OF REMOTE LINK - MM
+	CSL>STIR CRA
+User/Maintainer Documentation for STIRS			Page 16
+
+
+  To run from a remote host TTY:
+
+	1. Log in, if you are not already logged in.
+	2. Run the 'CSL' program.
+	3. In response to  the  'CSL' question about  which link, type
+	   'LINK YY', where YY is the line number of the KLINIK line
+	   which is connected to the KS10.  This puts you into 'CSL'
+	   prompt level.
+	4. Type 'STIR xxx', where xxx identifies the board to be
+	   tested.
+
+		BOARD		xxx
+		-----		---
+		M8616		CSL, MSCSL.EXE, or M8616
+		M8618		MMC, MSMMC.EXE, or M8618
+		M8620		DPE, MSDPE.EXE, or M8620
+		M8621		DPM, MSDPM.EXE, or M8621
+		M8622		CRA, MSCRA.EXE, or M8622
+
+  Example:
+
+	@RUN CSL
+
+	DECSYSTEM-2020 DIAGNOSTIC CONSOLE PROGRAM
+	VERSION XXX.X
+	[FOR HELP TYPE "HELP"]
+	LINE NUMBER OF REMOTE LINK - LINK YY
+	CSL>STIR CRA
+
+11.2  RUN-TIMES
+      ---------
+
+  The fault-free run  times for  each of  the STIRS  programs are  listed
+  below.  They were timed on a  lightly loaded TOPS-20 host system  (load
+  average <1 ) with a KLINIK line baud rate of 9600.
+
+	MSCSL - 1 min  45 secs
+	MSMMC - 8 mins  5 secs
+	MSDPE - 3 mins 15 secs
+	MSDPM - 5 mins 30 secs
+	MSCRA - 1 min  15 secs
+
+12.  PROGRAM RELEASE
+     ------- -------
+
+  The STIRS  programs'  files  are released  on  the  'DSTIR'  diagnostic
+  magtape.  Also on that  tape are the sources  and executable files  for
+  'CSL', the  SNOBOL utility  programs,  and all  other files  which  are
+  needed to compile and/or run the STIRS.  Since the only user for  STIRS
+  is manufacturing, this tape  is not released  through SDC.  Instead,  a
+  copy is  sent  to fire  storage  and a  copy  is hand  carried  to  the
+  manufacturing floor.  To maintain revision  control, there is a  formal
+  sign-off process with manufacturing and hardware engineering.

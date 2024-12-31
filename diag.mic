@@ -1,0 +1,29 @@
+@!	MIC file to be used to dump diagnostic tapes. The
+@!	command you want to give is:
+@!	DO DIAG MTAx, speed, MORDOR:<directory>
+@!	Where:
+@!		MTAx - Is the tape drive you have the diag tape
+@!		   	mounted on.
+@!		speed - The tape BPI (usually 1600 or 800)
+@!		MORDOR:<directory> - Where the diagnostic is to be
+@!			dumped. Usually MORDOR:<LATEST.diag-name>.
+@!			Can be a logical name.
+ENABLE
+OPR
+SET TAPE 'A: UNAVAILABLE Being used for diagnostic dumping
+EXIT
+@!	Now we must connect to the directory
+CONNECT 'C
+@!	Now let us assign the tape drive
+ASSIGN 'A
+@!	Run that fine and wonderful program
+R MAGTAP
+'A
+'B
+GET
+UNLOAD
+@!	Finally, get rid of the tape
+DEASSIGN 'A
+@!	Diagnostic successfully unloaded
+CONNECT MORDOR:<LATEST>
+@!	Connect to original directory

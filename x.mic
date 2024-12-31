@@ -1,0 +1,13 @@
+ENABLE
+OPR
+SET TAPE mta'A: UNAVAILABLE Being used for diagnostic dumping
+EXIT
+CONNECT [latest.'B]
+ASSIGN mta'A
+RUN [latest]SMTAPE.SAV
+mta'A
+1600
+GET
+UNLOAD
+DEASSIGN mta'A
+CONNECT MORDOR:<LATEST>

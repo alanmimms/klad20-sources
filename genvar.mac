@@ -1,0 +1,561 @@
+TITLE	GENVAR
+SUBTTL VARIABLE GENERATION ROUTINES
+
+	SEARCH	DEFINS,MONSYM
+	ENTRY	INPUT,GENVAR
+
+;These are found in mainline
+
+	EXTERN	VARFLG,RANDF
+
+;These are found in util1
+
+	EXTERN	NUMIN,.NUMIN,POCDEC,POCDEF,TSCAN
+
+;These are found in disks
+
+	EXTERN	ADCON,ABCCE,CWFTD,CWRWD,DATTBL,FCYCE,LCYCE,MXSEC,MXSUR
+
+;These are found in the rh20 support module
+
+	EXTERN	SNARKF
+
+;Here are internal cells
+
+	INTERN	DRV1,DRV2,DRV3,DRV4
+	INTERN	CYL1,CYL2,CYL3,CYL4
+	INTERN	SURF1,SURF2,SURF3,SURF4
+	INTERN	SECT1,SECT2,SECT3,SECT4
+	INTERN	PAT1,PAT2,PAT3,PAT4
+	INTERN	ADR1,ADR2,ADR3,ADR4
+	INTERN	SIZE1,SIZE2,SIZE3,SIZE4
+	INTERN	CMD1,CMD2,CMD3,CMD4
+
+	X2=X1			;Valid for known geometries
+
+	XLIST
+	BOX <GENVAR -- GENERATE VARIABLES>,<
+	THIS MERELY DISPATCHES TO THE PROPER ROUTINE "RANDOM"
+	OR "INPUT", BASED ON THE STATE OF "VARFLG".
+	CALLING	SEQ:
+	[SET UP AC ARGUMENTS]
+	GO	GENVAR		;Call the routine
+	RTN			;It returns here >
+
+GENVAR:	SKIPN	VARFLG
+	GO	RANDOM		;Input from rand numb gen
+	SKIPE	VARFLG
+	GO	INPUT		;Input from the tty
+	RTN			;And exit
+
+	XLIST
+	BOX	<INPUT -- VARIABLE PARAMETER INPUT ROUTINE (OR) RANDOMIZE >,<
+	THIS ALLOWS OPERATOR TO SPECIFY PROGRAM VARIABLES WITHIN CERTAIN
+	LIMITATIONS SPECIFIED BY A RESTRICTION CODE.
+
+	CALLING SEQ:
+	MOVE	4,ARG4		;Cylinder,, surf/sector
+	MOVE	3,ARG3		;Drive,, command
+	MOVE	2,ARG2		;Restriction code
+	MOVE	1,ARG1		;Address of variable to be input
+	GO	INPUT		;Call the routine (input or random)
+	RTN			;Returns here
+
+	NOTES:  ONLY RELEVANT ARGUMENTS MUST BE SPECIFIED IN AC'S
+	AC1	ALWAYS SPECIFIED
+	AC2	ALWAYS SPECIFIED
+	AC3,AC4	MAY OR MAY NOT BE SPECIFIED BASED ON THE
+		RESTRICTION CODE IN AC2.
+
+	WHEN CALLING RANDOM, THE ROUTINE OPERATES IDENTICALLY
+	EXCEPT THAT NUMBERS COME FROM A RANDOM NUMBER
+	GENERATOR RATHER THAN THE TTY.
+
+
+	RESTRICTIONS:
+	0 - NO RESTRICTIONS
+	1 - NO RESTRICTIONS
+	2 - RESTRICT TO MAINT AREA IF CUSTOMER DATA ON PACK AND
+	    NOT DOING A POSITION CMD
+	3 - RESTRICT TO MAINT AREA IF CUSTOMER DATA ON PACK AND
+	    DOING A WRITE COMMAND
+	4 - RESTRICT TO MAINT AREA IF CUSTOMER DATA
+
+	THE VARIABLE "SIZE" IS ALWAYS RESTRICTED TO NOT CROSS A
+	CYLINDER BOUNDRY AND ALSO NOT LARGER THAN A TRACK. IN ADDITION,
+	"SIZE" IS RESTRICTED TO 512. WORDS IN USER MODE.(1 PAGE)
+
+	THERE ARE 3 TABLES IMPORTANT TO THIS ROUTINE
+	VARNAM	HOLDS SIXBIT NAME OF VARIABLE
+	VARADD	HOLDS ADDRESS OF CORRESPONDING NAME
+	VARSER	HOLDS ADDRESS OF INPUT ROUTINE FOR CORRESPONDING VARIABLE
+	THERE IS A 1 FOR 1 RELATIONSHIP BETWEEN ALL OF THESE TABLES  >
+
+
+RANDOM:	SETOM	RANDF		;Random numbers
+	SKIPA			;Into common code
+INPUT:	SETZM	RANDF		;Input from tty
+	PUT	X		;Save index register
+	PUT	0
+	PUT	1
+	PUT	2
+	MOVEM	1,SV1#		;Save ac's (special "no" stack)
+	MOVEM	2,SV2#		;Other routines will look at these
+	MOVEM	3,SV3#
+	MOVEM	4,SV4#
+
+;First get index-x  set up by searching "varadd"
+
+	MOVE	2,1		;Get address to ac2
+	MOVEI	1,VARADD	;Get address of "variable address" table
+	GO	TSCAN		;Do a table lookup
+	FATAL			;Error. no entry (program bug)
+	MOVE	X,1		;Get table index to index register
+
+;Now dispatch to appropriate input service routine
+
+	GO	@VARSER(X)	;To proper service routine
+
+;Variable now updated. restore ac's and exit
+
+	GET	2
+	GET	1
+	GET	0		;Restore
+	GET	X
+	MOVE	1,SV1
+	MOVE	2,SV2
+	MOVE	3,SV3
+	MOVE	4,SV4
+	RTN			;Exit
+
+	XLIST
+	BOX	<THESE ARE THE INPUT SERVICE ROUTINES >,<
+	THESE ROUTINES CAN BE CALLED ONLY FROM INPUT. IF CALLED FROM
+	ANY OTHER PLACE THEY WON'T WORK. >
+
+;Routine to input drive number
+
+	GO	INERR		;Input error
+
+DRVIN:	MOVEM	DRIVE,@VARADD(X) ;;;; Temporary
+	RTN			 ;;;; Until i support multi-drive
+
+	GO	VARASK		;Ask for input
+	MOVEI	0,7		;  0,,7
+	MOVEM	0,LIMITS	;Save
+	GO	.NUMIN		;Input number
+	JRST	DRVIN		;Timeout
+	JRST	DRVIN-1		;Error
+	MOVEM	@VARADD(X)	;Normal store results
+	RTN			;And exit
+
+;Routine to input cylinder numbers
+
+CYLIN:	SETZM	RCMODF#		;Flag tells if index or absolute
+	MOVE	1,SV2		;Original ac'2 restriction code
+	CAILE	1,4		;Only this many restricions allowed
+	FATAL			;Pgm bug. wrong restriction
+	TLNE	DSW,(1B11)	;All read/writes to maint area ?
+	MOVEI	1,2		;Yes. use restriction code #2
+	GO	@RSTCOD(1)	;Set limits based on restrictions
+	SKIPA
+	GO	INERR		;Input error reporter
+CY1:	GO	VARASK		;Ask for variable
+	MOVE	0,LIMITS	;Get limits
+	GO 	.NUMIN		;Input
+	JRST	CY1		;Timeout
+	JRST	CY1-1		;Error
+	SKIPE	RCMODF		;Skip if not in index mode
+	ADD	0,FCYCE(X2)	;Yes. pick a maint cylinder
+	MOVEM	0,@VARADD(X)	;Ok. store results
+	RTN			;And exit
+
+;Restriction code table
+
+RSTCOD:	RC0			;Restriction routines
+	RC1
+	RC2
+	RC3
+	RC4
+
+;Restriction - 0	(none)
+
+RC0:	MOVE	0,LCYCE(X2)	;0,,Maxcyl "last avail cyl"
+	MOVEM	0,LIMITS	;All cyl. legal
+	RTN			;And exit
+
+;Restriction code - 1  (none)
+
+RC1:	GO	RC0		;Start with no restriction
+	RTN			;And get out
+
+;Restriction code - 2
+;Restrict to maint area if cust data and any data command
+
+RC2:	GO	RC0		;Start with no restriction
+	TLNN	DSW,(1B10)	;Customer data
+	RTN			;No. then done
+	HRRZ	0,SV3		;Yes. then get command
+	TRNN	0,20		;Data cmd
+	RTN			;No. then exit
+	MOVE	0,FCYCE(X2)	;Yes. restrict to maint area
+	HRLM	0,LIMITS	;Limits now updated
+	GO	RCMOD		;A special case if random
+	RTN			;Then exit
+
+;Restriction code - 3
+;Restrict to maint area if customer data and write command
+
+RC3:	GO	RC0		;Start with no restriction
+	TLNN	DSW,(1B10)	;Customer data  ?
+	RTN			;No. exit
+	LDB	[POINT 3,SV3,32] ;Yes. get cmd (high order 3)
+	CAIE	0,6		;Write  ?
+	RTN			;No. exit
+	MOVE	0,FCYCE(X2)	;Yes. restrict to maint area
+	HRLM	0,LIMITS	;Limits now updated
+	GO	RCMOD		;A special case if random
+	RTN			;Exit
+
+;Restriction code - 4
+;Restrict to maint area if customer data is on pack regardless of cmd
+
+RC4:	GO	RC0		;Start with no restriction
+	TLNN	DSW,(1B10)	;Customer data  ?
+	RTN			;No. exit
+	MOVE	0,FCYCE(X2)	;Yes. restrict to maint area
+	HRLM	0,LIMITS	;Adjust limits
+	GO	RCMOD		;A special case if random
+	RTN			;Exit
+
+;Rcmod - if we are picking maint cyls at random, we set up to generate
+; A small random number rather than a real cylinder addr. this speeds
+; Up the random number selection.
+
+RCMOD:	SKIPN	RANDF		;Random mode ?
+	RTN			;No. then leave alone
+	MOVE	0,ABCCE(X2)	;Get # of maint cyls avail
+	SUBI	0,1		;Now have n-1
+	MOVEM	0,LIMITS	;Now looking for small number
+	SETOM	RCMODF		;Says we're in index mode now
+	RTN			;Exit
+
+;Routine to input surface numbers
+
+	GO	INERR		;Input error routine
+SURIN:	GO	VARASK		;Ask for the entry
+	MOVE	0,MXSUR(X2)	;Get limits  0,,18.
+	MOVEM	LIMITS		;Set up limits
+	GO	.NUMIN		;Input the number
+	JRST	SURIN		;Timeout
+	JRST	SURIN-1		;Error
+	MOVEM	0,@VARADD(X)	;Normal. save results
+	RTN			;And exit
+
+;Routine to input sector numbers
+
+	GO	INERR		;Input error
+SECIN:	GO	VARASK		;Ask for entry
+	MOVE	0,MXSEC(X2)	;Max sector number
+	MOVEM	0,LIMITS	;Save limit
+	GO	.NUMIN		;Input
+	JRST	SECIN		;Timeout
+	JRST	SECIN-1		;Error
+	MOVEM	0,@VARADD(X)	;Ok. store results
+	RTN			;And exit
+
+;Routine to input pattern index
+
+	GO 	INERR		;Input error
+	TEXT	PATHLP		;Pattern help msg
+PATIN:	GO	VARASK		;Ask for variable
+	MOVEI	0,10		;0,,10
+	SKIPN	VARFLG		;Variable mode ?
+	MOVEI	0,7		;No  change limits
+	MOVEM	0,LIMITS	;Set up limits
+	GO	.NUMIN		;Input
+	JRST	PATIN		;Timeout
+	JRST	PATIN-2		;Input error
+	MOVEM	0,@VARADD(X)	;Ok  save results
+	SKIPN	VARFLG		;Variable mode
+	JRST	PATIX		;No
+	CAIN	0,10		;Index=10
+	GO	USPAT		;Yes  let user enter
+	TEXT	[ASCIZ/THE FOLLOWING PATTERN WILL BE USED:  /]
+	MOVE	1,@VARADD(X)	;Get pattern index
+	MOVE	0,DATTBL(1)	;Fetch pattern
+	PNTHW			;Print it
+	PCRL			;Acrlf
+PATIX:	RTN			;Then exit
+
+USPER:	TEXTF	[ASCIZ/
+ ?? TRY AGAIN /]
+USPAT:	TEXTF	[ASCIZ/
+ENTER 36-BIT OCTAL PATTERN:  -  /]
+	PFORCE
+	TTIOCT			;Input in octal
+	JRST	USPER		;Error
+	MOVEM	DATTBL+10	;Ok. store it
+	PCRL
+	RTN			;Exit
+
+;Routine to input the size of xfer
+
+	GO	INERR		;Input error
+SIZIN:	GO	VARASK		;Ask for the variable
+
+;Restrict the size. the minimum is 1 word. the maximum is up
+;To a track and we also may not cross a cylinder boundry.
+;Max size is: 128.*(final block-initial block+1)
+
+
+	MOVE	2,SV4		;Original disk addr
+	SETOM	1		;Make ac1 negative
+	GO	ADCON		;Convert to block #
+	MOVE	0,1		;Ac0 holds initial block
+	PUT	3		;Save the ac
+	MOVE	3,MXSUR(X2)	;Get max surface #
+	LSH	3,^D8		;Position it
+	IOR	3,MXSEC(X2)	;Include max sector #
+	HRR	2,3		;Ac2/cylinder,,surf,sect (last block)
+	GET	3		;Restore the ac
+	SETOM	1		;Make ac1 negative
+	GO	ADCON		;Convert to final block #
+	ADDI	1,1		;Final=final+1
+	SUB	1,0		;Ac1=final-initial
+	IMUL	1,CWRWD(X1)	;Words per block
+	MOVSI	0,1		;Gets lower limit
+	CAMLE	1,CWFTD(X1)	;Less than or equal to a full track ?
+	MOVE	1,CWFTD(X1)	;Greater than a track. limit it.
+	HRR	0,1		;Limits now ready
+	MOVEM	0,LIMITS	;Save them
+	GO	.NUMIN		;Enter number
+	JRST	SIZIN		;Timeout
+	JRST	SIZIN-1		;Error
+	GO	T10ADJ		;Adjust size if top10 read or write
+	MOVEM  0,@VARADD(X)	;Save results
+	RTN			;Exit
+
+T10ADJ:	SKIPE	USER		;User mode ?
+	SKIPE	SNARKF		;Yes, tops 10?
+	RTN			;No
+	PUT	1
+	MOVE	1,SV3		;Get command code
+	TRNE	1,6		;Is it a read or write update ?
+	JRST	T10AJX		;No, get out
+	IDIVI	0,200		;Yes, round down to multiple
+	IMULI	0,200		;Of sector size
+	SKIPN	0		;Was original size < 1 sector ?
+	MOVEI	0,200		;Yes, so round up to 1 sector
+T10AJX:	GET	1		;Restore ac1
+	RTN
+
+;Varask-tells user which parameter to enter
+
+VARASK:	SKIPE	RANDF		;Want tty input ?
+	RTN			;No. exit
+	TEXTF	[ASCIZ/ENTER  /]
+	MOVE	0,VARNAM(X)  	;Get name
+	PNTSXF			;Print it
+	TEXTF	[ASCIZ/: -  /]
+	RTN			;Exit
+
+;Input error handler. merely tells what range is allowed
+;In both octal and decimal
+
+INERR:	PUT	0		;Limits are here
+	TEXTF	[ASCIZ/
+** -- INPUT ERROR FOR "/]
+	MOVE	0,VARNAM(X)	;Get name
+	PNTSXF			;Print it
+	TEXTF	[ASCIZ/"./]
+	TEXTF	[ASCIZ/THE FOLLOWING IS ALLOWED:
+	/]
+	HLRZ	0,LIMITS#	;Get one limit
+	GO	POCDEF		;Print octal/decimal
+	TEXTF	[ASCIZ/ THRU  /]
+	HRRZ	0,LIMITS	;Get other limit
+	GO	POCDEF		;Print octal/decimal
+	PCRLF
+	GET	0		;Restore ac0
+	RTN			;Exit
+
+	XLIST
+	BOX	<VARADD - VARNAM -- TABLES >,<
+	THESE TABLES CAN BE USED TO TRANSLATE READILY BETWEEN VARIABLE
+	NAMES AND VARIABLE ADDRESSES	>
+
+VARNAM:	SIXBIT	/DRV1/		;Table of variable names
+	SIXBIT	/DRV2/
+	SIXBIT	/DRV3/
+	SIXBIT	/DRV4/
+	SIXBIT	/CYL1/
+	SIXBIT	/CYL2/
+	SIXBIT	/CYL3/
+	SIXBIT	/CYL4/
+	SIXBIT	/SURF1/
+	SIXBIT	/SURF2/
+	SIXBIT	/SURF3/
+	SIXBIT	/SURF4/
+	SIXBIT	/SECT1/
+	SIXBIT	/SECT2/
+	SIXBIT	/SECT3/
+	SIXBIT	/SECT4/
+	SIXBIT	/PAT1/
+	SIXBIT	/PAT2/
+	SIXBIT	/PAT3/
+	SIXBIT	/PAT4/
+	SIXBIT	/SIZE1/
+	SIXBIT	/SIZE2/
+	SIXBIT	/SIZE3/
+	SIXBIT	/SIZE4/
+	SIXBIT	/ADR1/
+	SIXBIT	/ADR2/
+	SIXBIT	/ADR3/
+	SIXBIT	/ADR4/
+	SIXBIT	/CMD1/
+	SIXBIT	/CMD2/
+	SIXBIT	/CMD3/
+	SIXBIT	/CMD4/
+	Z
+
+	PAGE
+VARADD:	DRV1			;Pointer table to variable storage locations
+	DRV2
+	DRV3
+	DRV4
+	CYL1
+	CYL2
+	CYL3
+	CYL4
+	SURF1
+	SURF2
+	SURF3
+	SURF4
+	SECT1
+	SECT2
+	SECT3
+	SECT4
+	PAT1
+	PAT2
+	PAT3
+	PAT4
+	SIZE1
+	SIZE2
+	SIZE3
+	SIZE4
+	ADR1
+	ADR2
+	ADR3
+	ADR4
+	CMD1
+	CMD2
+	CMD3
+	CMD4
+	Z
+
+	XLIST
+	BOX	<DISPATCH TABLE TO INPUT SERVICE ROUTINES >,<
+	THIS TABLE IS ORDERED TO TRACK "VARNAM" & "VARADD" TABLES.
+	THIS TABLE IS USED TO DISPATCH TO PROPER INPUT SERVICE
+	ROUTINE.  THIS ROUTINE IS PREVIOUSLY DETERMINED BY A
+	LOOKUP INTO "VARNAM" OR "VARADD" TABLES.  >
+
+VARSER:	DRVIN			;Inputs drives
+	DRVIN
+	DRVIN
+	DRVIN
+	CYLIN			;Input cylinders
+	CYLIN
+	CYLIN
+	CYLIN
+	SURIN			;Input surfaces
+	SURIN
+	SURIN
+	SURIN
+	SECIN			;Input sectors
+	SECIN
+	SECIN
+	SECIN
+	PATIN			;Input pattern
+	PATIN
+	PATIN
+	PATIN
+	SIZIN			;Input size
+	SIZIN
+	SIZIN
+	SIZIN
+	[RTN]			;Input address not allowed
+	[RTN]
+	[RTN]
+	[RTN]
+	COMDIN			;Input command
+	COMDIN
+	COMDIN
+	COMDIN
+	Z
+COMDIN:	[RTN]			;A dummy for now
+
+	XLIST
+	BOX <SOME GENERALLY USED STORAGE CELLS>,<>
+DRV1:	Z			;These hold drive numbers
+DRV2:	Z
+DRV3:	Z
+DRV4:	Z
+
+CYL1:	Z			;These cells hold cylinder numbers
+CYL2:	Z
+CYL3:	Z
+CYL4:	Z
+
+SURF1:	Z			;These cells hold surface numbers
+SURF2:	Z
+SURF3:	Z
+SURF4:	Z
+
+SECT1:	Z			;These cells hold sector numbers
+SECT2:	Z
+SECT3:	Z
+SECT4:	Z
+
+PAT1:	Z			;These cells hold pattern (or pattern index)
+PAT2:	Z
+PAT3:	Z
+PAT4:	Z
+
+ADR1:	Z			;These cells hold core addresses
+ADR2:	Z
+ADR3:	Z
+ADR4:	Z
+
+SIZE1:	Z			;These cells hold transfer sizes
+SIZE2:	Z
+SIZE3:	Z
+SIZE4:	Z
+
+CMD1:	Z			;These cells used for command codes
+CMD2:	Z
+CMD3:	Z
+CMD4:	Z
+
+	PAGE
+;Here is the pattern help message
+
+PATHLP:	ASCIZ  ?
+THIS IS AN INDEX INTO A STD PATTERN TABLE. ENTERING AN 8. ALLOWS
+ "YOU" TO SPECIFY THE OCTAL PATTERN (UP TO 36 BITS).
+
+INDEX	PATTERN
+0	575333,,333333		WORST CASE
+1	777777,,777777
+2	565252,,525253
+3	365735,,673567
+4	633333,,155554
+5	326661,,533306
+6	466152,,330651
+7	070360,,741703
+8	YOU WILL BE ASKED TO SUPPLY PATTERN
+
+?
+		END
+  

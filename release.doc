@@ -1,0 +1,204 @@
+!
+! RELEASE.DOC
+!
+! Written by HITESH VYAS 
+!
+! This file will attempt to give a reader an overview of process one
+! should go thru to produce released diagnostic.
+!
+! Basically there are two types of diagnostics STAND ALONE or USER MODE.
+
+! STAND ALONE diagnostic should run with .A10 file format. To create
+  .A10 file do as follow:
+
+  1) Assemble all the source modules,
+  2) Link or Compile all the source modules to create .SAV file,
+  3) Run CONVRT program to produce .A10 file (input file .SAV ),
+  
+! Here is an example of what just explained above.
+
+! DFCIA.CTL
+!
+! This command file is  used to assemble  all of the  source
+! files necessary to produce DFCIA.SAV.  The approximate CPU
+! time necessary to execute this batch job  is  30  minutes.
+! About 4000 pages  of disk space  are needed excluding  the
+! source files.
+
+@Define DSK: DSK:,<CUSP10>		!Get CONVRT, *.KLM
+@Define LPT: DSK:			!CREF output to disk
+
+! Compile sources only if needed
+
+CIAT::
+@Compile /Cref DFCIAT+PARAM.KLM+FIXED.KLM+DFCIAE DFCIAT
+@CREF
+@Expunge
+CIA1::
+@Compile /Cref DFCIA1
+@CREF
+@Expunge
+CIA2::
+@Compile /Cref DFCIA2
+@CREF
+@Expunge
+CIA3::
+@Compile /Cref DFCIA3
+@CREF
+@Expunge
+CIA4::
+@Compile /Cref DFCIA4
+@CREF
+@Expunge
+CIA5::
+@Compile /Cref DFCIA5
+@CREF
+@Expunge
+CIAI::
+@Compile /Cref DFCIAI
+@CREF
+@Expunge
+CIAU::
+@Compile /Cref DFCIAU
+@CREF
+@Expunge
+
+! Load and make .SAV and .A10 files
+
+SAVE::
+@R LINK
+*DFCIAT,DFCIA/MAP/GO
+@CSAVE DFCIA.SAV
+@CONVRT
+*DFCIA.SAV
+@Expunge
+
+! USER MODE diagnostic should run with .EXE file or .SAV file. To create
+! .EXE file do step 1 and 2 from above (STAND ALONE). To create .SAV
+! file do step 1 and 2 (specify switch S in step 2) frm above.
+
+! All the diagnostics must be accompany with .SEQ file. This file is a
+! user readable listing of diagnostic with cref,symbol table, text file
+! and history file. To create .SEQ do as follow:
+
+  1) Specify switch cref at compilation time to create .CRF file,
+  2) Run CREF program to produce .LST file,
+  3) Run DECDOC program to produce .SEQ file (input file .LST).
+
+! Example continue 
+!------------------
+!
+! Append listings together
+
+APP::
+@Delete DFCIA.LST
+@Expunge
+@APPEND DFCIAT.LST,DFCIA1.LST,DFCIA2.LST,DFCIA3.LST,DFCIA4.LST DFCIA.LST
+@APPEND DFCIA5.LST,DFCIAI.LST,DFCIAU.LST DFCIA.LST
+
+
+! Create .SEQ file
+
+DOC::
+@RU DECDOC
+*DFCIA
+@START
+*DFCIA/S=DFCIA.TXT,DFCIA.HST,DFCIA.DOC,DFCIA.LST,DFCIA.MAP
+@
+@Delete DFCIA.LST
+@Expunge
+
+! At this point you should have .SEQ file and should be asking where
+! are those utility program that I need ? All of the diagnostic utility
+! programs are located on diagnostic structure in the <CUSP10> area.
+
+! Now you are ready to make a release tape using a MAGTAP utility.
+! Create .INP file and use it to MAKE the diagnostic tape. 
+!
+! For example at MAGTAP COMMAND prompt simply type MAKE @DFCIA.INP to
+! make DFCIA diagnostic tape.
+
+! The diagnostic tape should contain all the files specify in the .INP
+! file. The .INP file must be in the following format. A copy of this
+! file is in the <LATEST> area as BLANK.INP. To create .INP file for a 
+! particular diagnostic simply type in file name for the lable BLANK.
+
+;THIS FILE IS USED TO GENERATE 'INP' FILES WITH THE LEAST AMOUNT OF 
+;ADDITIONS AND DELETIONS.
+;BLANK
+
+
+
+		       IDENTIFICATION
+		       --------------
+
+	DIAGNOSTIC CODE:	BLANK
+
+	PRODUCT NAME:		BLANK?? ? 
+
+	VERSION:		0.?
+
+	DATE RELEASED:		? 1981
+
+	MAINTAINED BY:		DIAGNOSTIC ENGINEERING
+
+	AUTHOR:			HITESH VYAS
+
+
+		        COPYRIGHT (C) 1981
+
+	        DIGITAL EQUIPMENT CORPORATION, MAYNARD, MASS.
+
+	THIS SOFTWARE IS FURNISHED UNDER A LICENSE FOR  USE  ONLY  ON  A
+	SINGLE COMPUTER SYSTEM AND MAY BE COPIED ONLY WITH THE INCLUSION
+	OF THE ABOVE COPYRIGHT NOTICE.   THIS  SOFTWARE,  OR  ANY  OTHER
+	COPIES  THEREOF, MAY NOT BE PROVIDED OR OTHERWISE MADE AVAILABLE
+	TO ANY OTHER PERSON EXCEPT FOR USE ON SUCH SYSTEM AND TO ONE WHO
+	AGREES  TO  THESE  LICENSE TERMS.  TITLE TO AND OWNERSHIP OF THE
+	SOFTWARE  SHALL  AT   ALL  TIMES  REMAIN  IN  DIGITAL  EQUIPMENT
+	CORPORATION.
+
+	THE INFORMATION IN THIS DOCUMENT IS SUBJECT  TO  CHANGE  WITHOUT
+	NOTICE  AND  SHOULD  NOT BE CONSTRUED AS A COMMITMENT BY DIGITAL
+	EQUIPMENT CORPORATION.
+
+	DIGITAL EQUIPMENT CORPORATION ASSUMES NO  RESPONSIBILITY FOR THE
+	USE  OR  RELIABILITY  OF  ITS SOFTWARE IN EQUIPMENT WHICH IS NOT
+	SUPPLIED BY DIGITAL EQUIPMENT CORPORATION.
+
+;STANDARD FILES
+
+MAGTAP.RDI				;MAGTAPE READ-IN BOOTSTRAP
+MAGTAP.SAV				;MAGTAPE CREATOR
+MAGMON.SAV				;MAGTAPE MONITOR
+MAGTAP.MTA				;INTERNAL MAGTAPE DIRECTORY
+MAGTAP.DIR				;PRINTABLE MAGTAPE DIRECTORY
+
+;FILE USED TO GENERATE THE TAPE
+
+BLANK.INP
+
+;PROGRAM FILES
+
+BLANK.A10
+BLANK.SAV
+BLANK.SEQ
+BLANK.EXE				;for user mode only
+
+;SOURCE FILES
+
+BLANK.CTL				;ctl file used to build diag 
+BLANKA.CCL				;indirect assembler file
+BLANKD.TXT				;text file on diagnostic
+BLANKH.HST				;revision history 
+BLANKM.MAC
+BLANKS.MAC
+BLANKT.MAC
+BLANK.HLP
+
+;MICROCODE FILES
+
+;FLOW CHARTS
+
+BLANK.FLI
+BLANK.FLO

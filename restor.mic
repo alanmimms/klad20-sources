@@ -1,0 +1,13 @@
+; Tape drive name is 1st arg. It should be set unavailable
+; Diag name (for directory) is 2nd arg.
+;
+; eg. DO RESTORE MTA2:,DBKAL
+;
+@ass 'a
+@dumper
+*inter
+*tape 'a
+*files
+*restor mordor:<latest.'b>*.*
+*unload
+*exit

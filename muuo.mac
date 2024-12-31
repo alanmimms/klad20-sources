@@ -1,0 +1,733 @@
+
+		SUBTTL	MUUO HANDLER FOR EXECUTIVE MODE
+; **************************************************************
+;*		MUUO HANDLER				       *
+;*							       *
+;*	1.TRAPS ILLEGAL UUO(000)			       *
+;*	2.DISPATCHES MUUO'S THRU INTERNAL TABLE(40-77)	       *
+; **************************************************************
+
+$MUOX:	Z			;MONITOR UUO HANDLER FOR EXEC MODE
+	MOVEM	$UUOAC		;SAVE AC0
+	MOVE	[1,,$UUOAC+1]	;GET SAVE POINTER
+	BLT	$UUOAC+17	;SAVE USER AC'S
+	LDB	[POINT 6,424,8]	;GET MUUO
+	LDB	1,[POINT 5,424,8]
+	JRST	@UUODSP(1)	;YES-ENTER SPECIFIED ROUTINE
+
+; **************************************************************
+;*		MUUO RETURN ROUTINE			       *
+; **************************************************************
+
+$MUORT:	HRLZI	$UUOAC		;GET RESTORE POINTER
+	BLT	17		;RESTORE USER AC'S
+	JRST	@425		;RETURN TO CALLING PROGRAM
+
+
+; ***************************************************************
+;*		LUUO DISPATCHER(GOES TO SUBRTN UUO HANDLER)     *
+; ***************************************************************
+
+$ILGUO:	MOVEI	[ASCIZ/
+	ILLEGAL UUO EXECUTED!
+	UUO = /]
+	PNTAL
+	MOVE	424
+	PNTHW
+	MOVEI	CRLF
+	PNTA
+$ILG1:	MOVEI	[ASCIZ/PC WORD = /]
+	PNTAL
+	MOVE	425
+	PNTHW
+	MOVEI	CRLF
+	PNTA
+	JRST	@START1		;START1 = ADDRESS TO STOP PROGRAM
+
+
+; ***************************************************************
+;*		DISPATCH TABLE FOR MUUO'S			*
+; ***************************************************************
+
+UUODSP:	$CALL			;VECTOR TO CALL ROUTINE
+	$INIT			;VECTOR TO INIT ROUTINE
+	$RESRV			;VECTOR TO RESRVE ROUTINE
+	$RESRV
+	$RESRV
+	$RESRV
+	$RESRV
+	$CALLI			;VECTOR TO CALLI ROUTINE
+	$OPEN			;VECTOR TO OPEN ROUTINE
+	$TTCAL			;VECTOR TO TTCALL ROUTINE
+	$RESRV			;VECTOR TO RESRVE ROUTINE
+	$RESRV
+	$RESRV
+	$RENAM			;VECTOR TO RENAME ROUTINE
+	$IN			;VECTOR TO IN ROUTINE
+	$OUT			;VECTOR TO OUT ROUTINE
+	$STSTS			;VECTOR TO SETSTS ROUTINE
+	$STATO			;VECTOR TO STATO ROUTINE
+	$GTSTS			;VECTOR TO GETSTS ROUTINE
+	$STATZ			;VECTOR TO STATZ ROUTINE
+	$INBUF			;VECTOR TO INBUF ROUTINE
+	$OTBUF			;VECTOR TO OTBUF ROUTINE
+	$INPUT			;VECTOR TO INPUT ROUTINE
+	$OTPUT			;VECTOR TO OUTPUT ROUTINE
+	$CLOSE			;VECTOR TO CLOSE ROUTINE
+	$RLEAS			;VECTOR TO RELEASE ROUTINE
+	$MTAPE			;VECTOR TO MTAPE ROUTINE
+	$UGETF			;VECTOR TO UGETF ROUTINE
+	$USETI			;VECTOR TO USETI ROUTINE
+	$USETO			;VECTOR TO USETO ROUTINE
+	$LOKUP			;VECTOR TO LOOKUP ROUTINE
+	$ENTER			;VECTOR TO ENTER ROUTINE
+
+; ***************************************************************
+;*		CALL UUO ROUTINE				*
+; ***************************************************************
+
+	IFNDEF	.CALL<
+$CALL:	MOVEI	[ASCIZ/
+ 	CALL/]
+	PNTAL
+	MOVEI	[ASCIZ/ NOT IMPLEMENTED
+/]
+	PNTAL
+	JRST	$ILG1
+>
+	IFDEF	.CALL<
+$CALL:				;INSERT REQUIRED CODE HERE
+	JRST	$MUORT		;RETURN TO USER
+>
+
+
+; ***************************************************************
+;*		INIT UUO ROUTINE				*
+; ***************************************************************
+
+		IFNDEF	.INIT<
+$INIT:	MOVEI	[ASCIZ/
+ 	INIT/]
+	PNTAL
+	MOVEI	[ASCIZ/ NOT IMPLEMENTED
+ 	/]
+	PNTAL
+	JRST	$ILG1
+>
+	IFDEF	.INIT<
+$INIT:				;INSERT REQUIRED CODE HERE
+	JRST	$MUORT		;RETURN TO USER
+>
+
+; ***************************************************************
+;*		RESERVED CODE ROUTINE				*
+; ***************************************************************
+
+
+$RESRV:	MOVEI	[ASCIZ/
+	RESERVED UUO WAS EXECUTED!
+ 	/]
+	PNTAL
+	JRST	$ILG1
+
+
+; ***************************************************************
+;*		CALLI UUO ROUTINE				*
+; ***************************************************************
+
+$CALLI:	HRRZ	1,424		;GET E FIELD
+	CAMGE	1,[-1]		;INSURE E FIELD NOT LESS THAN -1
+	JRST	$CALI1		;OTHERWISE HANDLE AS AN ERROR
+	CAILE	1,123		;INSURE E FIELD NOT GREATER THAN 123
+	JRST	$CALI1		;OTHERWISE HANDLE AS AN ERROR
+	JRST	@$CLDSP(1)	;GO TO ROUTINE THRU TABLE
+$CALI1:	MOVEI	[ASCIZ/
+	E FIELD OF CALLI OUT OF BOUNDS!
+ 	/]
+	PNTAL
+	JRST	$ILG1
+$CALI2:MOVEI	[ASCIZ/
+ 	CALLI	/]
+	PNTAL
+	LDB	[POINT 4,424,12]	;GET AC FIELD
+	PNT2
+	MOVEI	COMMA
+	PNTA
+	HRRZ	424
+	PNT3
+	MOVEI	[ASCIZ/ CAN'T BE EXECUTED.
+THE REQUIRED CODE HASN'T BEEN ADDED TO THE MUUO HANDLER.
+/]
+	PNTAL
+	JRST	$ILG1		;RETURN TO USER
+
+; ***************************************************************
+;*		CALLI DISPATCH TABLE				*
+; ***************************************************************
+
+	$LIGHT			;LIGHT UUO-DISPLAY AC IN CONSOLE LIGHTS
+$CLDSP:	$RESET			;RESET UUO-RESET I/O DEVICES
+	$CALI2			;DDTIN UUO-NOT IMPLEMENTED
+	$CALI2			;SETDDT UUO-NOT IMPLEMENTED
+	$CALI2			;DDTOUT UUO-NOT IMPLEMENTED
+	$CALI2			;DEVCHR UUO-NOT IMPLEMENTED
+	$CALI2			;DDTGT UUO-NOT IMPLEMENTED
+	$CALI2			;GETCHR UUO-NOT IMPLEMENTED
+	$CALI2			;DDTRL UUO-NOT IMPLEMENTED
+	$CALI2			;WAIT UUO-NOT IMPLEMENTED
+	$CALI2			;CORE UUO-NOT IMPLEMENTED
+	$EXIT			;EXIT UUO-STOP JOB
+	$CALI2			;UTPCLR UUO-NOT IMPLEMENTED
+	$CALI2			;DATE UUO-NOT IMPLEMENTED
+	$CALI2			;LOGIN UUO-NOT IMPLEMENTED
+	$CALI2			;APRENB UUO-NOT IMPLEMENTED
+	$CALI2			;LOGOUT UUO-NOT IMPLEMENTED
+	$RSW			;SWITCH UUO - GET DATA SWITCHES
+	$CALI2			;REASSI UUO-NOT IMPLEMENTED
+	$CALI2			;TIMER UUO-NOT IMPLEMENTED
+	$CALI2			;MSTIME UUO-NOT IMPLEMENTED
+	$CALI2			;GETPPN UUO-NOT IMPLEMENTED
+	$TRPST			;TRPSET UUO-ENTER I/O MODE
+	$CALI2			;TRPJEN UUO-NOT IMPLEMENTED
+	$CALI2			;RUNTIM UUO-NOT IMPLEMENTED
+	$CALI2			;PJOB UUO-NOT IMPLEMENTED
+	$CALI2			;SLEEP UUO-NOT IMPLEMENTED
+	$CALI2			;SETPOV UUO-NOT IMPLEMENTED
+	$CALI2			;PEEK UUO-NOT IMPLEMENTED
+	$CALI2			;GETLIN UUO-NOT IMPLEMENTED
+	$CALI2			;RUN UUO - NOT IMPLEMENTED
+	$CALI2			;SETUWP UUO-NOT IMPLEMENTED
+	$CALI2			;REMAP UUO-NOT IMPLEMENTED
+	$CALI2			;GETSEG UUO-NOT IMPLEMENTED
+	$GTTAB			;GETTAB UUO-LOOK AT MONITOR TABLES
+	$CALI2			;SPY UUO-NOT IMPLEMENTED
+	$CALI2			;SETNAM UUO-NOT IMPLEMENTED
+	$CALI2			;TMPCOR UUO-NOT IMPLEMENTED
+	$CALI2			;DSKCHR UUO-NOT IMPLEMENTED
+	$CALI2			;SYSSTR UUO-NOT IMPLEMENTED
+	$CALI2			;JOBSTR UUO-NOT IMPLEMENTED
+	$CALI2			;STRUUO UUO-NOT IMPLEMENTED
+	$CALI2			;SYSPHY UUO-NOT IMPLEMENTED
+	$CALI2			;FRECHN UUO-NOT IMPLEMENTED
+	$CALI2			;DEVTYP UUO-NOT IMPLEMENTED
+	$CALI2			;DEVSTS UUO-NOT IMPLEMENTED
+	$CALI2			;DEVPPN UUO-NOT IMPLEMENTED
+	$CALI2			;SEEK UUO-NOT IMPLEMENTED
+	$CALI2			;RTTRP UUO-NOT IMPLEMENTED
+	$LOCK			;LOCK UUO-LOCK JOB INTO CORE
+
+; ***************************************************************
+;*		CALLI DISPATCH TABLE(CONTINUED)			*
+; ***************************************************************
+	$CALI2			;JOBSTS UUO-NOT IMPLEMENTED
+	$CALI2			;LOCATE UUO-NOT IMPLEMENTED
+	$CALI2			;WHERE UUO-NOT IMPLEMENTED
+	$CALI2			;DEVNAM UUO-NOT IMPLEMENTED
+	$CALI2			;CTJOB UUO-NOT IMPLEMENTED
+	$CALI2			;GOBSTR UUO-NOT IMPLEMENTED
+	$CALI2			;ACTIVATE UUO-NOT IMPLEMENTED
+	$CALI2			;DEACTIVATE UUO-NOT IMPLEMENTED
+	$HPQ			;HPQ UUO-SET HIGH PRIORITY RUN QUEUE
+	$CALI2			;HIBER UUO-NOT IMPLEMENTED
+	$CALI2			;WAKE UUO-NOT IMPLEMENTED
+	$CALI2			;CHGPPN UUO-NOT IMPLEMENTED
+	$CALI2			;SETUUO UUO-NOT IMPLEMENTED
+	$CALI2			;DEVGEN UUO-NOT IMPLEMENTED
+	$CALI2			;OTHUSR UUO-NOT IMPLEMENTED
+	$CALI2			;CHKACC UUO-NOT IMPLEMENTED
+	$CALI2			;DEVSIZ UUO-NOT IMPLEMENTED
+	$CALI2			;DAEMON UUO-NOT IMPLEMENTED
+	$CALI2			;JOBPEK UUO-NOT IMPLEMENTED
+	$CALI2			;ATTACH UUO-NOT IMPLEMENTED
+	$CALI2			;DAEFIN UUO-NOT IMPLEMENTED
+	$CALI2			;FRCUUO UUO-NOT IMPLEMENTED
+	$CALI2			;DEVLNM UUO-NOT IMPLEMENTED
+	$CALI2			;PATH UUO-NOT IMPLEMENTED
+	$CALI2			;METER UUO-NOT IMPLEMENTED
+	$CALI2			;MTCHR UUO-NOT IMPLEMENTED
+	$CALI2			;JBSET UUO-NOT IMPLEMENTED
+	$CALI2			;POKE UUO-NOT IMPLEMENTED
+	$CALI2			;TRMNO UUO-NOT IMPLEMENTED
+	$CALI2			;TRMOP UUO -NOT IMPLEMENTED
+	$CALI2			;RESDV UUO-NOT IMPLEMENTED
+	$CALI2			;UNLOK UUO-NOT IMPLEMENTED
+	$CALI2			;DISK UUO-NOT IMPLEMENTED
+	$CALI2			;DVRST UUO-NOT IMPLEMENTED
+	$CALI2			;DVURS UUO-NOT IMPLEMENTED
+
+; ***************************************************************
+;*		LIGHT ROUTINE					*
+; ***************************************************************
+
+$LIGHT:	LDB	1,[POINT 4,424,12]
+	MOVE	$UUOAC(1)	;GET AC OF UUO
+	SKIPN	KLFLG		;NO LIGHTS ON KL10
+	DATAO	PI,		;DISPLAY IN CONSOLE LIGHTS
+	JRST	$MUORT		;RETURN TO USER
+
+; ***************************************************************
+;*		RESET ROUTINE					*
+; ***************************************************************
+
+$RESET:	CONO	APR,IOCLR	;RESET ALL I/O DEVICES
+	JRST	$MUORT		;RETURN TO USER
+
+; ***************************************************************
+;*		SWITCH ROUTINE					*
+; ***************************************************************
+
+$RSW:	LDB	1,[POINT 4,424,12]
+	SWITCH			;GET CONSOLE SWITCHES FROM KL10 FRONT END
+	MOVEM	$UUOAC(1)	;STORE INTO USERS AC
+	JRST	$MUORT		;RETURN TO USER
+
+; ***************************************************************
+;*		EXIT ROUTINE					*
+; ***************************************************************
+
+$EXIT:	LDB	1,[POINT 4,424,12]
+	MOVE	$UUOAC(1)	;GET CONTENTS OF USER AC
+	HALT	@		;HALT E FIELD IS ARGUMENT IN AC
+
+; ***************************************************************
+;*		LOCK ROUTINE					*
+; ***************************************************************
+
+$LOCK:	AOS	425		;INSURE NORMAL RETURN
+	JRST	$MUORT		;MERELY RETURN TO USER(EXEC NOP)
+
+; ***************************************************************
+;*		GETTAB ROUTINE					*
+; ***************************************************************
+
+$GTTAB:	LDB	1,[POINT 4,424,12]
+	MOVE	[-1,,1]		;PUT JBTADR ARG INTO AC0
+	CAME	$UUOAC(1)	;IS THIS THE GETTAB ARG
+	JRST	$TAB1		;NO-EXIT
+	SETZM	$UUOAC(1)	;RETURN RELOCATION VALUE OF ZERO
+	AOS	425		;UPDATE TO TAKE NORMAL RETURN
+$TAB1:	JRST	$MUORT		;RETURN TO USER
+
+; ***************************************************************
+;*		TRPSET ROUTINE					*
+; ***************************************************************
+
+$TRPST:	LDB	1,[POINT 4,424,12]
+	SKIPN	$UUOAC(1)	;TEST FOR TRPSET WITH ARG=0
+	JRST	$TRP1-1		;IF SO TAKE NORMAL EXIT
+	HLRZ	$UUOAC(1)	;GET ADDRESS OF DESTINATION
+	CAIGE	40		;SKIP IF ADDR ABOVE 37
+	JRST	$TRP1		;HERE IF < 40
+	CAILE	57		;SKIP IF LT OR EQ 57
+	JRST	$TRP1		;HERE IF OUTSIDE VECTORS
+	MOVE	2,@		;PICKUP WORD
+	HRRZ	3,$UUOAC(1)	;GET SOURCE ADDR
+	MOVE	4,(3)		;GET SOURCE WORD
+	MOVEM	4,@		;PUT SOURCE INTO DESITINATION
+	MOVEM	2,$UUOAC(1)	;GIVE OLD VALUE TO USER
+	AOS	425		;SETUP FOR NORMAL RETURN
+$TRP1:	JRST	$MUORT		;RETURN TO USER
+
+
+; ***************************************************************
+;*		HPQ ROUTINE					*
+; ***************************************************************
+
+
+$HPQ:	JRST	$MUORT		;JUST RETURN TO USER(EXEC NOP)
+
+; ***************************************************************
+;*		OPEN UUO ROUTINE				*
+; ***************************************************************
+
+	IFNDEF	.OPEN<
+$OPEN:	MOVEI	[ASCIZ/
+OPEN/]
+	PNTAL
+	MOVEI	[ASCIZ/ NOT IMPLEMENTED
+/]
+	PNTAL
+	JRST	$ILG1
+>
+	IFDEF	.OPEN<
+$OPEN:				;INSERT CODE HERE
+	JRST	$MUORT		;RETURN TO USER
+>
+
+
+; ***************************************************************
+;*		TTCALL UUO ROUTINE				*
+; ***************************************************************
+
+	IFNDEF	.TTCAL<
+$TTCAL:	MOVEI	[ASCIZ/
+TTCALL/]
+	PNTAL
+	MOVEI	[ASCIZ/ NOT IMPLEMENTED
+/]
+	PNTAL
+	JRST	$ILG1
+>
+	IFDEF	.TTCAL<
+$TTCAL:				;INSERT CODE HERE
+	JRST	$MUORT		;RETURN TO USER
+>
+
+; ***************************************************************
+;*		RENAME UUO ROUTINE				*
+; ***************************************************************
+
+	IFNDEF	.RENAM<
+$RENAM:	MOVEI	[ASCIZ/
+RENAME/]
+	PNTAL
+	MOVEI	[ASCIZ/ NOT IMPLEMENTED
+/]
+	PNTAL
+	JRST	$ILG1
+>
+	IFDEF	.RENAM<
+$RENAM:				;INSERT CODE HERE
+	JRST	$MUORT		;RETURN TO USER
+>
+
+
+; ***************************************************************
+;*		IN UUO ROUTINE					*
+; ***************************************************************
+
+	IFNDEF	.IN<
+$IN:	MOVEI	[ASCIZ/
+IN/]
+	PNTAL
+	MOVEI	[ASCIZ/ NOT IMPLEMENTED
+/]
+	PNTAL
+	JRST	$ILG1
+>
+	IFDEF	.IN<
+$IN:				;INSERT CODE HERE
+	JRST	$MUORT		;RETURN TO USER
+>
+
+; ***************************************************************
+;*		OUT UUO ROUTINE					*
+; ***************************************************************
+
+	IFNDEF	.OUT<
+$OUT:	MOVEI	[ASCIZ/
+OUT/]
+	PNTAL
+	MOVEI	[ASCIZ/ NOT IMPLEMENTED
+/]
+	PNTAL
+	JRST	$ILG1
+>
+	IFDEF	.OUT<
+$OUT:				;INSERT CODE HERE
+	JRST	$MUORT		;RETURN TO USER
+>
+
+; ***************************************************************
+;*		SETSTS UUO ROUTINE				*
+; ***************************************************************
+
+	IFNDEF	.STSTS<
+$STSTS:	MOVEI	[ASCIZ/
+SETSTS/]
+	PNTAL
+	MOVEI	[ASCIZ/ NOT IMPLEMENTED
+/]
+	PNTAL
+	JRST	$ILG1
+>
+	IFDEF	.STSTS<
+$STSTS:				;INSERT CODE HERE
+	JRST	$MUORT		;RETURN TO USER
+>
+
+; ***************************************************************
+;*		STATO UUO ROUTINE				*
+; ***************************************************************
+
+	IFNDEF	.STATO<
+$STATO:	MOVEI	[ASCIZ/
+STATO/]
+	PNTAL
+	MOVEI	[ASCIZ/ NOT IMPLEMENTED
+/]
+	PNTAL
+	JRST	$ILG1
+>
+	IFDEF	.STATO<
+$STATO:				;INSERT CODE HERE
+	JRST	$MUORT		;RETURN TO USER
+>
+
+
+; ***************************************************************
+;*		GETSTS UUO ROUTINE				*
+; ***************************************************************
+
+	IFNDEF	.GTSTS<
+$GTSTS:	MOVEI	[ASCIZ/
+GETSTS/]
+	PNTAL
+	MOVEI	[ASCIZ/ NOT IMPLEMENTED
+/]
+	PNTAL
+	JRST	$ILG1
+>
+	IFDEF	.GTSTS<
+$GTSTS:				;INSERT CODE HERE
+	JRST	$MUORT		;RETURN TO USER
+>
+
+; ***************************************************************
+;*		STATZ UUO ROUTINE				*
+; ***************************************************************
+
+	IFNDEF	.STATZ<
+$STATZ:	MOVEI	[ASCIZ/
+STATZ/]
+	PNTAL
+	MOVEI	[ASCIZ/ NOT IMPLEMENTED
+/]
+	PNTAL
+	JRST	$ILG1
+>
+	IFDEF	.STATZ<
+$STATZ:				;INSERT CODE HERE
+	JRST	$MUORT		;RETURN TO USER
+>
+
+
+; ***************************************************************
+;*		INBUF UUO ROUTINE				*
+; ***************************************************************
+
+	IFNDEF	.INBUF<
+$INBUF:	MOVEI	[ASCIZ/
+INBUF/]
+	PNTAL
+	MOVEI	[ASCIZ/ NOT IMPLEMENTED
+/]
+	PNTAL
+	JRST	$ILG1
+>
+	IFDEF	.INBUF<
+$INBUF:				;INSERT CODE HERE
+	JRST	$MUORT		;RETURN TO USER
+>
+
+; ***************************************************************
+;*		OUTBUF UUO ROUTINE				*
+; ***************************************************************
+
+	IFNDEF	.OTBUF<
+$OTBUF:	MOVEI	[ASCIZ/
+OUTBUF/]
+	PNTAL
+	MOVEI	[ASCIZ/ NOT IMPLEMENTED
+/]
+	PNTAL
+	JRST	$ILG1
+>
+	IFDEF	.OTBUF<
+$OTBUF:				;INSERT CODE HERE
+	JRST	$MUORT		;RETURN TO USER
+>
+
+
+; ***************************************************************
+;*		INPUT UUO ROUTINE				*
+; ***************************************************************
+
+	IFNDEF	.INPUT<
+$INPUT:	MOVEI	[ASCIZ/
+INPUT/]
+	PNTAL
+	MOVEI	[ASCIZ/ NOT IMPLEMENTED
+/]
+	PNTAL
+	JRST	$ILG1
+>
+	IFDEF	.INPUT<
+$INPUT:				;INSERT CODE HERE
+	JRST	$MUORT		;RETURN TO USER
+>
+
+; ***************************************************************
+;*		OUTPUT UUO ROUTINE				*
+; ***************************************************************
+
+	IFNDEF	.OTBUF<
+$OTPUT:	MOVEI	[ASCIZ/
+OUTPUT/]
+	PNTAL
+	MOVEI	[ASCIZ/ NOT IMPLEMENTED
+/]
+	PNTAL
+	JRST	$ILG1
+>
+	IFDEF	.OTBUF<
+$OTPUT:				;INSERT CODE HERE
+	JRST	$MUORT		;RETURN TO USER
+>
+
+
+; ***************************************************************
+;*		CLOSE UUO ROUTINE				*
+; ***************************************************************
+
+	IFNDEF	.CLOSE<
+$CLOSE:	MOVEI	[ASCIZ/
+CLOSE/]
+	PNTAL
+	MOVEI	[ASCIZ/ NOT IMPLEMENTED
+/]
+	PNTAL
+	JRST	$ILG1
+>
+	IFDEF	.CLOSE<
+$CLOSE:				;INSERT CODE HERE
+	JRST	$MUORT		;RETURN TO USER
+>
+
+; ***************************************************************
+;*		RELEASE UUO ROUTINE				*
+; ***************************************************************
+
+	IFNDEF	.RLEAS<
+$RLEAS:	MOVEI	[ASCIZ/
+RELEASE/]
+	PNTAL
+	MOVEI	[ASCIZ/ NOT IMPLEMENTED
+/]
+	PNTAL
+	JRST	$ILG1
+>
+	IFDEF	.RLEAS<
+$RLEAS:				;INSERT CODE HERE
+	JRST	$MUORT		;RETURN TO USER
+>
+
+
+; ***************************************************************
+;*		MTAPE UUO ROUTINE				*
+; ***************************************************************
+
+	IFNDEF	.MTAPE<
+$MTAPE:	MOVEI	[ASCIZ/
+MTAPE/]
+	PNTAL
+	MOVEI	[ASCIZ/ NOT IMPLEMENTED
+/]
+	PNTAL
+	JRST	$ILG1
+>
+	IFDEF	.MTAPE<
+$MTAPE:				;INSERT CODE HERE
+	JRST	$MUORT		;RETURN TO USER
+>
+
+; ***************************************************************
+;*		UGETF UUO ROUTINE				*
+; ***************************************************************
+
+	IFNDEF	.UGETF<
+$UGETF:	MOVEI	[ASCIZ/
+UGETF/]
+	PNTAL
+	MOVEI	[ASCIZ/ NOT IMPLEMENTED
+/]
+	PNTAL
+	JRST	$ILG1
+	IFDEF	.UGETF<
+$UGETF:				;INSERT CODE HERE
+	JRST	$MUORT		;RETURN TO USER
+>
+
+; ***************************************************************
+;*		USETI UUO ROUTINE				*
+; ***************************************************************
+
+	IFNDEF	.USETI<
+$USETI:	MOVEI	[ASCIZ/
+USETI/]
+	PNTAL
+	MOVEI	[ASCIZ/ NOT IMPLEMENTED
+/]
+	PNTAL
+	JRST	$ILG1
+>
+	IFDEF	.USETI<
+$USETI:				;INSERT CODE HERE
+	JRST	$MUORT		;RETURN TO USER
+>
+
+; ***************************************************************
+;*		USETO UUO ROUTINE				*
+; ***************************************************************
+
+	IFNDEF	.USETO<
+$USETO:	MOVEI	[ASCIZ/
+USETO/]
+	PNTAL
+	MOVEI	[ASCIZ/ NOT IMPLEMENTED
+/]
+	PNTAL
+	JRST	$ILG1
+>
+	IFDEF	.USETO<
+$USETO:			;INSERT CODE HERE
+	JRST	$MUORT		;RETURN TO USER
+>
+
+
+; ***************************************************************
+;*		LOOKUP UUO ROUTINE				*
+; ***************************************************************
+
+	IFNDEF	.LOKUP<
+$LOKUP:	MOVEI	[ASCIZ/
+LOOKUP/]
+	PNTAL
+	MOVEI	[ASCIZ/ NOT IMPLEMENTED
+/]
+	PNTAL
+	JRST	$ILG1
+>
+	IFDEF	.LOKUP<
+$LOKUP:				;INSERT CODE HERE
+	JRST	$MUORT		;RETURN TO USER
+>
+
+; ***************************************************************
+;*		ENTER UUO ROUTINE				*
+; ***************************************************************
+
+	IFNDEF	.ENTER<
+$ENTER:	MOVEI	[ASCIZ/
+ENTER/]
+	PNTAL
+	MOVEI	[ASCIZ/ NOT IMPLEMENTED
+/]
+	PNTAL
+	JRST	$ILG1
+>
+	IFDEF	.ENTER<
+$ENTER:				;INSERT CODE HERE
+	JRST	$MUORT		;RETURN TO USER
+>
+
+
+; ***************************************************************
+;*		SAVE SPACE FOR USER AC'S			*
+; ***************************************************************
+
+$UUOAC:	BLOCK	^D16
+>
+	LIST
+
+

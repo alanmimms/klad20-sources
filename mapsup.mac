@@ -1,0 +1,1611 @@
+	RELOC
+	SEARCH DEFINS,MONSYM
+
+;Routines in this module used by the program
+
+	ENTRY	DBEDIT,GETENT,PUTENT,MAKBAT,ENTOLD,ENTNEW
+	ENTRY	LSTQ,LSTQO,BATDSB,MERGEB,PRGENT,CKENPT
+	INTERN	ENT1,ENT2,ENT3,LBN
+
+;These are located in the mainline
+
+	EXTERN	BUF1A,VARFLG
+
+;These are located in dfdxg1/dfrpm1
+
+	EXTERN	BRANCH,IOWAIT,XFSTRT,UNITF,UNIT
+
+;These are located in the rh20 support file
+
+	EXTERN	CHSEL
+
+;These are located in the general utility module
+
+	EXTERN	TYPBIT,POCDEC,POCT,PSDN,RUNTMF,TSCAN,APRSN,QSTN
+	EXTERN	RUNTME,NUMIN,POCDEF
+
+;These are located in the common disk file
+
+	EXTERN	ADCON,CWRWD,GENBAT,LBCE
+
+;These are located in genvar module
+
+	EXTERN	CYL1,SURF1,SECT1,INPUT
+
+;  **** Notes concerning mapout support in this program ****
+;This program keeps track of data errors by disk address. each data error
+;Will be logged in the data base along with some additional status info
+;Needed by the program. the data base in this program has room for a total
+;Of 400 errors (separate disk addresses).
+;
+;Each database entry consists of 3 words, the first 2 are exactly the
+;Same as a 2 word bat block entry. the words are broken down like this:
+;
+;Word-1
+;Bits 00-08 contain the number of bad blocks in a region - 1 (nbr)
+;Bit 09 will be set if this block was detected on more than 1 rh20 (mul)
+;Bits 10-17 contain (in unary), the drives where this block was located (pub)
+;Bits 18-20 contain the logical rh where the address was first located (knm)
+;Bit 21 always a 1, indicating a new style bat block
+;Bits 22-35 contains the serial number of the apr (aprid)
+;
+;Word-2
+;Bits 14-35 contain a logical block number of first block in region (lbn)
+;
+;Word-3
+;(Bbu) bit 00 this bit being set will cause entry to go to bat blocks
+;(Ebu) bit 01 this bit says operator forced bit zero to be set
+;(Cbu) bit 02 this bit says operator forced bit zero to be reset
+;(Bat) bit 03 this bit says entry was found in bat block on media
+;(Pgm) bit 04 this bit says entry was found by the program
+;(Opr) bit 05 this bit says entry was made by the operator
+;(Pnt) bit 06 this bit says operator wants all errors printed from this address
+;Bits 08-14 bits indicating what types of errors detected at this address
+;(Hec) bits 18-26 number of times this address was found as a hard error
+;(Heo) bit 16 indicates that the hard error counter has overflowed
+;(Sec) bits 27-35 number of times this address was found as a soft error
+;(Seo) bit 17 indicates that the soft error counter has overflowed
+;
+;The mapout routine allows the user 2 levels of commands. the top level
+;Commands allow you to manipulate the data base in a global way. from
+;The top level the user has the following commands available:
+;
+;Lsthrd - list all entries with bbu=1 (the 1st 61 of these go to bat blocks)
+;Lstsft - list entries with bbu=1 (these don't go to the bat blocks)
+;Lstall - list all entries
+;Clrdb - clear the data base (all bad spot data is gone)
+;Wrtbat - writes bat blocks with entries with bbu=1. (1st 61 only)
+;Done - exit the mapout routine
+;H - blurb of this list
+;Editl - go to next command level "data base entry/edit using logical blocks)
+;Editp - go to next command level "data base entry/edit using physical blocks)
+;Listq - quick summary by lbn only (decimal)
+;Listqo - quick summary by lbn only (octal)
+;The following will be printed for each mapout entry. lines that start
+;With an asterisk are printed only when they apply.
+;
+;Running mapout rh-xxx drive-x   runtime (hh:mm:ss) xx:yy:zz
+;  Mapout entry:  rh-xxx drive(s)-x  multi-rh:yes   aprid=xxxxx.
+;  Lbn=oooooo(ddddddd.) cyl=oooo(dddd.)  surf=oo(dd.)  sect=oo(dd.)
+;  Entry came from: bat pgm opr     blocks in region=xxx.
+;  Hard errors detected=xxxx.    soft errors detected=xxxx.
+;* Errors detected: dck opi hcrc ech   
+;* Soft error counter has overflowed
+;* Hard error counter has overflowed
+;  Entry will (not) be put in bat block (opr canceled update)
+;* Errors from this address will be reported
+;  ----
+;
+;Editp and editl allow you to edit individual entries of the mapout data base
+;The only difference is that in one case you select the entry by logical block
+;And in the other you select the entry by physical address cyc, surf, sect.
+;In entry edit mode you are really diddling a copy of the data base entry
+;So there's no need to worry about destroying it. the edits only go back to
+;The data base when a "done" ore "next" command are executed.
+;
+;The following commands are allowed while at "entry edit" level:
+;
+;List - list state of the current (edited) entry
+;Mr - modify region (# of bad blocks in region)
+;Hard - sets bbu=1, entry becomes hard error and will go to bat block
+;Soft - sets bbu=0, entry becomes soft error and will not go to bat block
+;Clrst - clear error status info bits 08-35 of 3rd word
+;Pnt - allows further reporting of errors from this disk address
+;Nopnt - inhibits further printing of errors from this disk address
+;Clrent - clear this entry. this address no longer in data base
+;Cancel - leave entry edit mode and don't update the data base
+;Done - leave entry edit mode after updating the data base
+;Next - update the data base and process another entry
+;H - this message 
+
+
+;Dbedit -- mapout data base editor (top level)
+;This routine is called from mapout when running in variable mode. the
+;Following commands are supported here:
+;
+;Lsthrd - list all entries with bbu=1 (the 1st 61 of these go to bat blocks)
+;Lstsft - list entries with bbu=0 (these don't go to the bat blocks)
+;List - list all entries
+;Listq - quick summary by lbn only (decimal)
+;Listqo - quick summary by lbn only (octal)
+;Clrdb - clear the data base (all bad spot data is gone)
+;Wrtbat - writes bat blocks with entries with bbu=1. (1st 61 only)
+;Done - exit the mapout routine
+;H - this message
+;Editl - go to next command level "data base entry/edit using logical blocks)
+;Editp - go to next command level "data base entry/edit using physical blocks)
+;
+;The mapout data is located in the dsb area at offset "dbstrt" and is of
+;Length "dbsize"
+;
+;Call seq:
+;	Go	dbedit		;call this routine
+;	Rtn-1			;one return.... 
+
+DBEDIT:	PUT	0		;Save ac's
+	PUT	1
+	PUT	2
+	TEXTF	[ASCIZ/
+NOW EDITING DATA-BASE
+/]
+	SKIPA			;Skip over error prompt
+DBED0:	TEXTF	[ASCIZ/ ???/]
+DBED1:	TEXTF	[ASCIZ/
+DATA-BASE-EDIT CMD (OR H<CR>) - /]
+	TTSIXB			;Input a command in sixbit
+	JRST	DBED0		;Error return
+	JUMPE	0,DBED0		;If ac0=0 we have an input error
+	MOVE	2,0		;Get command to ac2
+	MOVEI	1,MCMD1		;Get address of command name table
+	GO	TSCAN		;Look up to check for legal command
+	JRST	DBED0		;Error. non implemented command
+	CAMN	2,[SIXBIT/DONE/] ;Is he done ?
+	JRST	DBEDX		;Yes. exit
+	GO	@MCMD1A(1)	;No. dispatch to proper command handler
+	JRST	DBED1		;And now go ask for the next command
+DBEDX:	GET	2		;Restore ac's
+	GET	1
+	GET	0
+	RTN			;Exit
+
+;Table of legal commands
+
+MCMD1:	SIXBIT	/LSTHRD/	;List if bbu=1
+	SIXBIT	/LSTSFT/	;List if bbu=0
+	SIXBIT	/LIST/		;List all entries
+	SIXBIT	/LISTQ/		;Summary by lbn only (decimal)
+	SIXBIT	/LISTQO/	;Summary by lbn only (octal)
+	SIXBIT	/CLRDB/		;Clear data base
+	SIXBIT	/WRTBAT/	;Write bat blocks now
+	SIXBIT	/DONE/		;Finished
+	SIXBIT	/H/		;Help message
+	SIXBIT	/EDITL/		;Edit in logical block mode
+	SIXBIT	/EDITP/		;Edit in physical block mode
+	Z			;End of table marker
+
+;Table pointing to service routine for each command
+
+MCMD1A:	LSTHRD			;List if bbu=1
+	LSTSFT			;List if bbu=0
+	LSTALL			;List all entries
+	LSTQ			;Quick summary by lbn (decimal)
+	LSTQO			;Quick summary by lbn (octal)
+	CLRDB			;Clears the data base
+	WRTBAT			;Creates and writes new bat blocks
+	[RTN]			;For done cmd ... never gets executed
+	DBHELP			;Prints the help message for dbedit
+	EDITL			;Edit entry in logical mode
+	EDITP			;Edit entry in physical mode
+	Z			;End of table mark
+
+
+; Dbhelp -- subroutine to print help message for dbedit routine
+;
+;	Call seq:
+;	Go	dbhelp		;the call
+;	Rtn-1			;the return 
+
+DBHELP:	TEXTF	[ASCIZ?
+LSTHRD - LIST ENTRIES THAT WILL GO TO BAT BLOCKS (1ST 61 GO TO BAT)
+LSTSFT - LIST ENTRIES THAT WILL NOT GO TO THE BAT BLOCKS
+LIST - LIST ALL ENTRIES IN DATA BASE
+LISTQ - SUMMARY AND QUICK LIST BY DISK ADDR (DECIMAL)
+LISTQO - SUMMARY AND QUICK LIST BY DISK ADDR (OCTAL)?]
+	TEXTF	[ASCIZ?
+CLRDB - CLEAR THE DATA BASE (ALL BAD SPOT DATA IS LOST)
+WRTBAT - WRITES BAT BLOCKS NOW
+DONE - EXIT THE MAPOUT ROUTINE
+EDITL - EDIT ENTRIES BY LOGICAL BLOCK NUMBERS
+EDITP -  EDIT ENTRIES IN PHYSICAL ADDRESS MODE
+H - BLURB OF THIS LIST
+?]
+	RTN			;Exit after prnting the text ...
+
+
+
+
+;Subroutine to write bat blocks with all (up to 61) data base entries
+;Whose bbu=1 ...
+;Buf1a is used as the write buffer
+;
+;	Call seq:
+;	Go	wrtbat		;call the routine
+;	Rtn			;+1 always
+
+WRTBAT:	PUT	1		;Save ac
+	MOVE	1,BUF1A		;Get buffer addr
+	GO	MAKBAT		;Do it now
+	GET	1		;Restore ac
+	RTN			;Exit
+
+
+; Subroutines to list data base entries
+;There are 3 entry points into 1 routine to list hard, soft, all entries
+;
+;	Call seq:
+;	Go	lstxxx		;xxx is either hrd, sft,all
+;	Rtn			;rtn-1 always
+
+LSTALL:	PUT	4		;Save ac4
+	MOVE	4,[JFCL]	;A no-op for later
+	JRST	LSTCMN		;To common code
+
+LSTHRD:	PUT	4		;Save ac4
+	MOVE	4,[TLNE	2,400000] ;Skips if bbu=0
+	JRST	LSTCMN		;To common code
+
+LSTSFT:	PUT	4		;Save ac4
+	MOVE	4,[TLNN	2,400000] ;Skips if bbu=1
+	JRST	LSTCMN		;To common code
+
+LSTCMN:	PUT	2		;Save rest of ac's
+	PUT	1
+	MOVEI	1,DBSTRT(DSW)	;Keep our pointer in ac1
+LLOOP:	MOVE	2,(1)		;Get a data base entry
+	JUMPE	2,LNXT		;Skip if entry is zero
+	MOVE	2,2(1)		;Get entry word-3 
+	XCT	4		;Does correct test/skip instruction
+	GO	ENTPNT		;Print entry. ac1 points to it
+LNXT:	ADDI	1,3		;Point to next possible entry
+	CAIGE	1,DBEND(DSW)	;Are we done ?
+	JRST	LLOOP		;No.
+	GET	1		;Yes. restore ac's
+	GET	2
+	GET	4
+	RTN			;And exit
+
+;Subroutine to clear entire data base
+;This requires confirmation (only) if you're in variable mode
+;All mapout data is then gone ....
+;This also clears the hard and soft spot counters in the dsb area
+;    Sspots=0  and  hspots=0
+;
+;	Call seq:
+;	Go	clrdb		;call the routine
+;	Rtn-1			;+1 always
+
+CLRDB:	PUT	1		;Save an ac
+	SKIPN	VARFLG		;In variable mode ?
+	JRST	CLRDBG		;No... no confirmation necessary
+	TEXTF	[ASCIZ/
+THIS COMMAND CAUSES ALL MAPOUT AND BAT BLOCK INFO TO BE DELETED FOR
+THIS DRIVE. DO YOU WISH TO PROCEED /]
+	GO	QSTN		;Ask (y or n)
+	JRST	.-1		;Timeout
+	JRST	CLRDBX		;Answer was no ...
+CLRDBG:	MOVNI	1,DBSIZE-1	;-Count
+	HRL	1,1		;-Cnt to left side of ac
+	HRRI	1,DBSTRT(DSW)	;-Cnt,,ptr
+	SETZM	(1)		;Clear a cell
+	AOBJN	1,.-1		;Loop till done
+	SETZM	HSPOTS(DSW)	;Clear hard spot counter
+	SETZM	SSPOTS(DSW)	;Clears soft spots counter
+CLRDBX:	GET	1		;Restore the ac
+	RTN			;And exit
+
+;Lstq - lstqo -- routine to give quick summary of data base
+;This routine lists the lbns of the bad spots, indicates whether they
+;Are hard (will go to bat blocks) or soft (will not go to bat blocks)
+;And also lists the number of times each address (spot) was found to 
+;Be hard or soft
+;
+;Threre are 2 entry points. lstq prints in decimal and lstqo
+;Prints in octal ....
+;
+;Call	seq:
+;	Go	lstq (or lstqo) ;the call
+;	Rtn1			;+1 always 
+
+
+;Here's the entry for decimal printer
+
+LSTQ:	PUT	4		;Save ac4
+	SETOM	4		;Flag tells how we're printing
+	JRST	LSTQC		;To common code
+
+;Here's the entry for octal printer
+
+LSTQO:	PUT	4		;Save ac4
+	SETZM	4		;Flag tessl how we're printin
+	JRST	LSTQC		;To common code
+
+;Here's the common code
+
+LSTQC:	PUT	0		;Save he other ac's
+	PUT	1
+	PUT	2
+	PUT	3
+	TEXT	[ASCIZ/
+MAPOUT-DATA-BASE-SUMMARY:  /]
+	GO	RUNTME		;Print runtime
+	PCRL
+	GO	UNIT		;Identify rh, drive etc...
+	TEXT	[ASCIZ?
+THERE ARE ?]
+	MOVE	0,HSPOTS(DSW)	;Get hard spot count
+	GO	PSDN		;Print
+	TEXT	[ASCIZ/ HARD REGIONS AND /]
+	MOVE	0,SSPOTS(DSW)	;Get soft spot count
+	GO	PSDN		;Print
+	TEXT	[ASCIZ/ SOFT REGIONS KNOWN TO PROGRAM
+/]
+
+;Now list them if there are any in either octal or decimal
+
+	MOVE	0,HSPOTS(DSW)	;Get hards
+	ADD	0,SSPOTS(DSW)	;Include softs
+	JUMPE	0,LSTQX		;Exit if there is nothing to report
+	TEXT	[ASCIZ/STARTING ADDRESSES OF THE REGIONS ARE:
+/]
+	TEXT	[ASCIZ/	LBN	CYL	SURF	SECT	#-HARD	#-SOFT
+	---	---	----	----	------	------
+/]
+	MOVEI	3,DBSTRT(DSW)	;Set up pointer into data base
+LSTQF:	MOVE	2,(3)		;Get wd-1 of entry
+	JUMPE	2,LSTQN		;Non-entry if wd-1 is zero
+	LDB	0,[POINT 27,1(3),35] ;Ok. lbn goes to ac0
+	MOVE	2,2(3)		;Get entry word-3 (status)
+	MOVEI	1,[ASCIZ/* HARD	/] ;Assume its hard
+	TLNN	2,400000	;Is bbu=1
+	MOVEI	1,[ASCIZ/  SOFT	/] ;No. change message
+	TEXT	(1)		;Print message pointed to by ac1
+	MOVE	1,[GO PSDN]	;Assume we'll be doing decimal
+	SKIPN	4		;If ac4=0 we're doing octal ..
+	MOVE	1,[GO POCT]	;Modify our choice of routines
+	XCT	1		;To proper print routine
+	TEXT	[ASCIZ/	/]	;Tab over
+	MOVE	1,0		;Get lbn to ac1
+	SETZM	2		;Clear ac2
+	GO	ADCON		;Convert to physical address
+	HLRZ	0,2		;Get cyl #
+	MOVE	1,[GO PSDN]	;Assume we'll be doing decimal
+	SKIPN	4		;If ac4=0 we're doing octal ..
+	MOVE	1,[GO POCT]	;Modify our choice of routines
+	XCT	1		;To proper print routine
+	TEXT	[ASCIZ/	/]	;Tab over
+	LDB	0,[POINT 8,2,27] ;Get the surface number
+	MOVE	1,[GO PSDN]	;Assume we'll be doing decimal
+	SKIPN	4		;If ac4=0 we're doing octal ..
+	MOVE	1,[GO POCT]	;Modify our choice of routines
+	XCT	1		;To proper print routine
+	TEXT	[ASCIZ/	/]	;Tab over
+	LDB	0,[POINT 8,2,35] ;Get the sector
+	MOVE	1,[GO PSDN]	;Assume we'll be doing decimal
+	SKIPN	4		;If ac4=0 we're doing octal ..
+	MOVE	1,[GO POCT]	;Modify our choice of routines
+	XCT	1		;To proper print routine
+	TEXT	[ASCIZ/	/]	;Tab
+	MOVE	1,2(3)		;Get the 3rd wd
+	TLNN	1,(1B16)	;Is heo set ?
+	JRST	.+3		;No. print normal
+	TEXT	[ASCIZ/OVRFLO/]
+	JRST	LSTQF1		;Now do soft
+	LDB	0,[POINT 9,2(3),26] ; No overflo. get hard count
+	GO	PSDN		;Print it
+LSTQF1:	TEXT	[ASCIZ/	/]	;Tab
+	TLNN	1,(1B17)	;Is seo set ?
+	JRST	.+3		;No. print normal
+	TEXT	[ASCIZ/OVRFLO/]
+	JRST	LSTQF2		;Bac to common code
+	LDB	0,[POINT 9,2(3),35] ;Get soft error count
+	GO 	PSDN		;Print it
+LSTQF2:	PCRL			;Advance to next line
+LSTQN:	ADDI	3,3		;Point to next entry
+	CAIGE	3,DBEND(DSW)	;Are we at the end ?
+	JRST	LSTQF		;No. process next entry
+LSTQX:	GET	3		;Yes. restore ac's
+	GET	2
+	GET	1
+	GET	0
+	GET	4
+	RTN			;And exit
+
+
+;Editp - editl -- mapout data base entry editor (2nd level cmds)
+;This routine allows you to edit specific entries in the mapout data base. the
+;Data base is located in the dsb area at offset "dbstrt" and is of size "dbsize".
+;
+;Editp and editl allow you to edit individual entries of the mapout data base
+;The only difference is that in one case you select the entry by logical block
+;And in the other you select the entry by physical address cyc, surf, sect.
+;In entry edit mode you are really diddling a copy of the data base entry
+;So there's no need to worry about destroying it. the edits only go back to
+;The data base when a "done" ore "next" command are executed.
+;
+;The following commands are allowed while at "entry edit" level:
+;
+;List - list state of the current (edited) entry
+;Mr - modify region (# of bad blocks in region)
+;Hard - sets bbu=1, entry becomes hard error and will go to bat block
+;Soft - sets bbu=0, entry becomes soft error and will not go to bat block
+;Clrst - clear error status info bits 08-35 of 3rd word
+;Pnt - allows further reporting of errors from this disk address
+;Nopnt - inhibits further printing of errors from this disk address
+;Clrent - clear this entry. this address no longer in data base
+;Cancel - leave entry edit mode and don't update the data base
+;Done - leave entry edit mode after updating the data base
+;Next - update the data base and process another entry 
+;
+;Call seq:
+;	Go	xxxxx		;where xxxxx is editp or editl
+;	Rtn-1			;always returns here 
+
+
+
+;Here is the edit entry for logical mode
+
+EDITL:	TEXTF	[ASCIZ/
+NOW EDITING INDIVIDUAL DATA-BASE-ENTRIES
+/]
+	PUT	0		;Save ac's
+	PUT	1
+	PUT	2
+	SETZM	EDFLG		;Flag indicates logical block mode
+EL0:	GO	GETLBN		;Input lbn (entire disk is legal)
+	MOVEM	0,LBN		;Save in ent for the future
+	JRST	EPLCOM		;Go to common code
+
+;Here is the edit entry for physical mode
+
+EDITP:	TEXTF	[ASCIZ/
+NOW EDITING INDIVIDUAL DATA-BASE-ENTRIES
+/]
+	PUT	0		;Save ac's
+	PUT	1
+	PUT	2
+	SETOM	EDFLG		;Flag indicates physical address mode
+
+EP0:	MOVEI	1,CYL1		;Want to input cyl1
+	SETZM	2		;No restrictions
+	GO	INPUT		;Do tty input
+	MOVEI	1,SURF1		;Want to input surf1
+	SETZM	2		;No restrictions
+	GO	INPUT		;Do tty input
+	MOVEI	1,SECT1		;Want to input sect1
+	SETZM	2		;No restrictions
+	GO	INPUT		;Do tty input
+
+	HRRZ	2,SURF1		;Ac2/ 0,,surf1
+	LSH	2,^D8		;Ac2/ 0,,surf1,0
+	IOR	2,SECT1		;Ac2/ 0,,surf1,sect1
+	HRL	2,CYL1		;Ac2/ cyl1,,surf1,sect1
+	SETOM	1		;Says convert physical to logical
+	GO	ADCON		;Do the conversion
+	MOVEM	1,LBN		;Save the lbn
+	TEXTF	[ASCIZ/LBN = /]
+	MOVE	0,LBN		;Get logical block number
+	GO	POCDEF		;Print in octal and decimal
+	PCRL			;A crlf
+	JRST	EPLCOM
+
+;From here on we have common edit code ...
+
+EPLCOM:	MOVE	1,LBN		;Get logical block number
+	SETZM	2		;Clear ac2 ..
+	GO	GETENT		;Look the entry up in our data base
+	JRST	EDNEW		;+1 New entry.. ac2=0
+	JRST	EDOLD		;+2 Old entry.. ac2=ptr into data base
+
+EDNEW:	TEXTF	[ASCIZ/CREATING A NEW ENTRY/]
+	MOVEI	2,ENT1		;Get pointer to 3 wd edit buffer
+	GO	ENTNEW		;Create a new entry in edit buffer
+	JRST	SETOPR		;Go set operator selected bit
+
+EDOLD:	TEXTF	[ASCIZ/MODIFYING AN EXISTING ENTRY/]
+	MOVEI	1,ENT1		;Pointer to 3 wd edit buffer
+	GO	ENTOLD		;Fetch and update existing entry
+
+SETOPR:	MOVSI	1,(1B5)		;Sets bit-5
+	IORM	1,ENT3		;Sets opr diddled this entry status bit
+	JRST	EDCMD		;Go handle commands
+
+;This code processes entry level edit comands from operator. the data has
+;Been moved from the data base (or newly created) in the edit buffer at
+;Ent1,ent2,ent3. the current logical block number is stored in lbn.
+
+EDCMDE:	TEXTF	[ASCIZ/???/]
+EDCMD:	TEXTF	[ASCIZ/
+ENTRY-EDIT CMD (OR H<CR>) - /]
+	TTSIXB			;Get a command in sixbit
+	JRST	EDCMDE		;Error on input
+	JUMPE	0,EDCMDE	;Error if ac0 = 0
+	MOVEI	1,MCMD2		;Pointer to command table
+	MOVE	2,0		;Get command to ac2
+	GO	TSCAN		;Do a table lookup
+	JRST	EDCMDE		;Error ... no such command
+	JFCL			;Ok. ac1 is an index.  ac2 holds command
+
+;Time to parse for special cases
+
+	CAME	0,[SIXBIT/CLRENT/] ;Clear entry ?
+	JRST	EDDN		;No
+	SETZM	ENT1		;Yes. zero buffer
+	SETZM	ENT2
+	SETZM	ENT3
+	JRST	UDNOW		;And update now
+EDDN:	CAME	0,[SIXBIT/DONE/] ;Finished entry edits ?
+	JRST	EDCAN		;No
+UDNOW:	MOVE	1,LBN		;Get logical block number
+	MOVEI	2,ENT1		;Pointer to edit buffer
+	GO	PUTENT		;Put the entry away
+	JFCL			;+1 Data base is full
+	JRST	EDEX		;+2 Ok.... exit
+EDCAN:	CAMN	0,[SIXBIT/CANCEL/] ;Abort edit commands ?
+	JRST	EDEX		;Yes
+	CAME	0,[SIXBIT/NEXT/] ;Go onto next ?
+	JRST	EDDISP		;No... process remainder of commands
+	MOVE	1,LBN		;Get logical block
+	MOVEI	2,ENT1		;Pointer to edit buffer
+	GO	PUTENT		;Update current entry
+	JFCL			;+1 Data base full
+	SKIPN	EDFLG		;+2 Ok ... branch according to mode
+	JRST	EL0		;In logical edit mode
+	JRST	EP0		;In physical edit mode
+EDDISP:	GO	@MCMD2A(1)	;Dispatch according to command
+	JRST	EDCMD		;And process the next command
+EDEX:	TEXTF	[ASCIZ/NOW EDITING DATA-BASE
+/]
+	GET	2		;Restore ac's
+	GET	1
+	GET	0
+	RTN			;And exit
+
+;Command table for entry level editor
+
+MCMD2:	SIXBIT	/LIST/		;List entry
+	SIXBIT	/MR/		;Modify region
+	SIXBIT	/HARD/		;Make a hard error
+	SIXBIT	/SOFT/		;Make a soft error
+	SIXBIT	/CLRST/		;Clear status
+	SIXBIT	/PNT/		;Enable print all
+	SIXBIT	/NOPNT/		;Inhibit print
+	SIXBIT	/CLRENT/	;Delete this entry
+	SIXBIT	/CANCEL/	;Cancel this edit session
+	SIXBIT	/DONE/		;Finished edits
+	SIXBIT	/NEXT/		;Move on to next entry
+	SIXBIT	/H/		;Help
+	Z			;End of table marker
+
+;Pointer to command service routines
+
+MCMD2A:	ENTLST			;List entry
+	ENTMR			;Modify region
+	ENTHRD			;Make a hard error
+	ENTSFT			;Make a soft error
+	ENTCST			;Clear status/error info
+	ENTPT			;Set the pnt bit
+	ENTNPT			;Clear the pnt bit
+	[RTN]			;Clear handled elsewhere
+	[RTN]			;Cancel handled elsewhere
+	[RTN]			;Done is handled elsewhere
+	[RTN]			;Next is handled elsewhere
+	EDHLP			;Help command
+	Z			;End of table marker
+	
+;Here is a small storage area needed by edit routne
+
+LBN:	Z			;Lbn goes here
+ENT1:	Z			;Entry word-1 goes here
+ENT2:	Z			;Entry word-2 goes here
+ENT3:	Z			;Entry word-3 goes here
+EDFLG:	Z			;Edit mode flag. 0=logical, -1=physical
+
+;Subroutine to input the logical block number (lbn)
+;The limits are 0 through however many blocks are on the selected drive
+;
+;	Call seq
+;	Go	getlbn		;the call
+;	Rtn			;+1 always with lbn in ac0
+
+GETLBN:	JRST	LBNIN		;Skip over input error code
+
+LBNER:	TEXTF	[ASCIZ/** -- INPUT ERROR FOR "LBN"./]
+	TEXTF	[ASCIZ/ THE FOLLOWING IS ALLOWED:
+0  THRU  /]
+	MOVE	0,LBCE(X1)	;Gets last block on disk
+	GO	POCDEF		;Print it
+	PCRLF
+	JRST	LBNIN		;Retry ..
+
+LBNIN:	TEXTF	[ASCIZ/LOGICAL BLOCK (LBN) - /]
+	TTICNV			;Input a convertable number
+	JRST	LBNER		;Error or timeout
+	CAIL	0,0		;Range test
+	CAMLE	0,LBCE(X1)
+	JRST	LBNER		;Out of range
+	RTN			;Ok. exit with number in ac0
+
+
+
+;Routine allows operator to modify region  of entry.
+;Data is in ent1, ent2, ent3.  up to 512. blocks in region is legal.
+;
+;	Call seq
+;	Go	entmr		;call the routine
+;	Rtn			;region is updated per operator request
+
+ENTMR:	PUT	0		;Save the ac
+	SKIPA			;Skip error message
+MRER:	TEXTF	[ASCIZ/???
+/]
+	TEXTF	[ASCIZ/SIZE OF REGION (1-512.) - /]
+	MOVE	0,[1,,^D512]	;Sets up the limits
+	GO	NUMIN		;Input a number
+	JRST	.-2		;Timeout
+	JRST	MRER		;Input error
+	SUBI	0,1		;Ok.   adjust because nbb=n-1
+	DPB	0,[POINT 9,ENT1,8] ;Updates the region
+	GET	0		;Restore the ac
+	RTN			;And exit
+
+
+;Edhlp -- subroutine to print help msg in entry level editor
+;
+;	Call seq:
+;	Go	edhlp		;call the routine
+;	Rtn-1			;rtn+1 always
+
+EDHLP:	TEXTF	[ASCIZ?
+LIST - LIST STATE OF THE CURRENT (EDITED) ENTRY
+MR - MODIFY REGION (# OF BAD BLOCKS IN REGION)
+HARD - ENTRY BECOMES HARD ERROR AND WILL GO TO BAT BLOCK
+SOFT - ENTRY BECOMES SOFT ERROR AND WILL NOT GO TO BAT BLOCK
+CLRST - CLEAR ERROR STATUS AND COUNTERS ?]
+	TEXTF	[ASCIZ?
+PNT - ALLOWS FURTHER REPORTING OF ERRORS FROM THIS DISK ADDRESS
+NOPNT - INHIBITS FURTHER PRINTING OF ERRORS FROM THIS DISK ADDRESS
+CLRENT - DELETE THIS ENTRY FROM THE DATA BASE (IMMEDIATELY)
+CANCEL - LEAVE ENTRY EDIT MODE (IMMEDIATELY) AND DON'T UPDATE THE DATA BASE
+DONE - LEAVE ENTRY EDIT MODE AFTER UPDATING THE DATA BASE
+NEXT - UPDATE THE DATA BASE AND PROCESS ANOTHER ENTRY 
+H - THIS MESSAGE
+?]
+	RTN			;And exit
+
+
+
+
+;Subroutine to list state of current edited entry
+;The data is at location ent1, ent2, ent3 (the edit buffer)
+;
+
+;	Call seq:
+;	Go	entlst		;the call
+;	Rtn			;+1
+
+ENTLST:	PUT	1		;Save the ac
+	MOVEI	1,ENT1		;Pointer to edit buffer
+	GO	ENTPNT		;Call the printer
+	GET	1		;Restore the ac
+	RTN			;Exit
+
+;Subroutine allows operator to declare the entry a hard error
+;Data is in ent1, ent2, ent3.  sets: bbu=1 ebu=1 cbu=0
+;
+;	Call seq
+;	Go	enthrd		;call the routine
+;	Rtn			;+1 always
+
+ENTHRD:	PUT	1		;Save ac1
+	MOVE	1,ENT3		;Get entry
+	TLO	1,600000	;Bbu=1 ebu=1
+	TLZ	1,100000	;Cbu=0
+	MOVEM	1,ENT3		;Save entry 
+	GET	1		;Restore ac
+	RTN			;Exit
+
+
+
+;Subroutine allows operator to declare the entry a soft error
+;Data is in ent1, ent2, ent3. sets: bbu=0 ebu=0 cbu=1
+;
+;	Call seq
+;	Go	entsft		;call the routine
+;	Rtn			:+1 always
+
+ENTSFT:	PUT	1		;Save ac1
+	MOVE	1,ENT3		;Get an entry
+	TLZ	1,600000	;Bbu=0 ebu=0
+	TLO	1,100000	;Cbu=1
+	MOVEM	1,ENT3		;Save entry
+	GET	1		;Restore ac
+	RTN			;Exit
+
+
+
+;Subroutine to clear status information for entry
+;Data is in ent1, ent2, ent3.  clears bits 08-35 of entry word #3
+;
+;	Call seq
+;	Go	entcst		;the call
+;	Rtn			;+1 always
+
+ENTCST:	PUT	1		;Save ac
+	SETZM	1		;Clear ac
+	DPB	1,[POINT 28,ENT3,35] ;Clear the status information
+	GET	1		;Restore the ac
+	RTN			;And exit
+
+;Subroutine causes pnt=1.
+;Data is in ent1, ent2, ent3
+;
+;	Call seq
+;	Go	entpt		;the call
+;	Rtn			;+1 always
+
+ENTPT:	PUT	1		;Save ac1
+	MOVE	1,ENT3		;Fetch entry
+	TLO	1,004000	;Pnt=1
+	MOVEM	1,ENT3		;Save entry
+	GET	1		;Restore the ac	
+	RTN			;Exit
+
+
+
+;Subroutine causes pnt=0.  
+;Data is in ent1, ent2, ent3
+;
+;	Call seq
+;	Go	entnpt		;the call
+;	Rtn			;+1 always
+
+ENTNPT:	PUT	1		;Save ac1
+	MOVE	1,ENT3		;Fetch entry
+	TLZ	1,004000	;Pnt=0
+	MOVEM	1,ENT3		;Save the entry
+	GET	1		;Restore the ac
+	RTN			;Exit
+
+
+;Entnew -- routine to start processing a new data base entry
+;The following functions are performed here:
+;1. The entry is initialzed to 0
+;2. The lbn is plugged into entry word-2
+;3. Word-1 is completely initialized (aprid, pub, knm, etc)
+;
+;Call seq:
+;	Move	1,arg1		;ac1 contains lbn
+;	Move	2,arg2		;ac2 points to 3 wd buffer where entry goes
+;	Go	entnew		;call the routine
+;	Rtn-1			;a valid looking entry is in your buffer 
+
+ENTNEW:	PUT	1		;Save ac's
+	PUT	2
+	SETZM	0(2)		;Clears 3 wds of entry
+	SETZM	1(2)
+	SETZM	2(2)
+	MOVEM	1,1(2)		;Puts the lbn in the entry
+	GO	APRSN		;Get serial number of the cpu to ac1
+	TRO	1,1B21		;Set bit-21 at the same time
+	DPB	1,[POINT 15,(2),35] ;Stuff into first entry word
+	GO	CHSEL		;Get logical chan # to ac1
+	DPB	1,[POINT 3,(2),20] ;Stuff into first entry word (knm)
+	MOVSI	1,1		;1 Goes to bit 17
+	LSH	1,(DRIVE)	;Shift in unary to the left
+	IORM	1,(2)		;Put into he first word of the entry
+	GET	2		;Restor ac's
+	GET	1
+	RTN			;And exit
+
+;Entold -- routine to start processing existing entry
+;This routne begins processing an existing entry after moving it to
+;Your buffer from the data base:
+;1. It updates entry word-1 only. in particular its job is to plug
+;   In the new drive number and decide if the mul bit should be set.
+;
+;Call seq:
+;	Move	1,arg1		;ac1 holds a pointer to your edit buffer
+;	Move	2,arg2		;ac2 holds a pointer to entry in the data base
+;	Go	entold		;call the routine
+;	Rtn-1			;your buffer now hold partially updated entry 
+
+ENTOLD:	PUT	0		;Save ac's
+	PUT	1
+	PUT	2
+	EXCH	2,1		;Ac1/ptr to data base, ac2/ptr to your buffer
+	MOVE	0,0(1)		;Xfer 1st wd
+	MOVEM	0,0(2)
+	MOVE	0,1(1)		;Xfer second wd
+	MOVEM	0,1(2)
+	MOVE	0,2(1)		;Xfer third word
+	MOVEM	0,2(2)
+	GO	APRSN		;Get serial number of cpu to ac1
+	ANDI	1,3777		;Save 14 bits
+	MOVE	0,(2)		;Get first entry word
+	ANDI	0,3777		;Save 14 bits
+	CAME	0,1		;Is aprid=sn of cpu ?
+	JRST	SETMUL		;No. set multi-rh bit in entry word-1
+	GO	CHSEL		;Yes. get rh chan # to ac1
+	LDB	0,[POINT 3,(2),20] ;Get knm from entry word-1
+	CAMN	0,1		;Is chan # = knm ?
+	JRST	SETDRV		;Yes. no need to set mul bit
+SETMUL:	MOVSI	1,(1B9)		;Get the mul bit set
+	IORM	1,(2)		;Now ...
+SETDRV:	MOVSI	1,1		;A 1 to bit 17
+	LSH	1,(DRIVE)	;Shift in unary to left
+	IORM	1,(2)		;Entry word-1 pub is now updated
+	GET	2		;Restore ac's
+	GET	1
+	GET	0
+	RTN			;And exit
+
+
+;Entpnt -- subroutine to print mapout data base entry
+;This routine prints a breakdown of the contents of a mapout entry.
+;
+;Call seq:
+;	Move	1,arg1		;pointer to first word of the entry
+;	Go	entpnt		;call the routine
+;	Rtn-1			;the return....
+;
+;The following will be printed for each mapout entry. lines that start
+;With an asterisk are printed only when they apply.
+;
+;Running mapout rh-xxx drive-x   runtime (hh:mm:ss) xx:yy:zz
+;  Mapout entry:  rh-xxx drive(s)-x  multi-rh:yes   aprid=xxxxx.
+;  Lbn=oooooo(ddddddd.) cyl=oooo(dddd.)  surf=oo(dd.)  sect=oo(dd.)
+;  Entry came from: bat pgm opr     blocks in region=xxx.
+;  Hard errors detected=xxxx.    soft errors detected=xxxx.
+;* Errors detected: dck ech hcrc dte opi etc   
+;* Soft error counter has overflowed
+;* Hard error counter has overflowed
+;  Entry will (not) be put in bat block (opr canceled update)
+;  Errors from this address will (not) be reported
+;  ---- 
+
+ENTPNT:	PUT 	0		;Save the ac's
+	PUT	1
+	PUT	2
+	PUT	3
+	MOVE	3,1		;We'll maintain our pntr in ac3
+	TEXT	[ASCIZ/RUNNING-MAPOUT /]
+	GO	RUNTME		;Program runtime
+	PCRL
+	GO	UNIT		;Identify rh, drive, etc....
+
+;Print the first line
+
+	TEXT	[ASCIZ/
+MAPOUT ENTRY:  CHAN(RH)-/]
+	LDB	0,[POINT 3,(3),20] ;Get controller #
+	GO	POCT
+	TEXT	[ASCIZ/  ON DRIVE(S) /]
+	MOVE	1,(3)		;Get data
+	MOVEI	2,DVTB		;Get a table pointer
+	GO	TYPBIT		;Identify drives
+	TEXT	[ASCIZ/  MULTI-RH:/]
+	LDB	0,[POINT 1,(3),9] ;Get multi-rh bit
+	JUMPE	0,.+3		;Is it set ?
+	TEXT	[ASCIZ/YES/]	;Yes, say so.
+	SKIPA
+	TEXT	[ASCIZ/NO/]	;It's not set
+	TEXT	[ASCIZ/   APRID=/]
+	LDB	0,[POINT 14,(3),35] ;Get aprid field
+	GO 	PSDN
+
+;Print the second line
+
+	TEXT	[ASCIZ/
+LBN=/]
+	LDB	0,[POINT 27,1(3),35] ;Get lbn
+	GO	POCDEC
+	TEXT	[ASCIZ/ CYL=/]
+	LDB	1,[POINT 27,1(3),35] ;Get lbn again
+	GO	ADCON		;Convert to a disk address
+	HLRZ	0,2		;Get cyl #
+	GO	POCDEC
+	TEXT	[ASCIZ/  SURF=/]
+	LDB	0,[POINT 8,2,27];Get surf #
+	GO	POCDEC
+	TEXT	[ASCIZ/  SECT=/]
+	LDB	0,[POINT 8,2,35];Get rec #
+	GO	POCDEC
+
+;Print the third line
+
+	TEXT	[ASCIZ/
+ENTRY CAME FROM: /]
+	MOVE	1,2(3)		;Get 3rd entry
+	MOVEI	2,WHOTB		;Get pointer to table
+	GO	TYPBIT		;Tells where entry was found
+	TEXT	[ASCIZ/    BLOCKS IN REGION=/]
+	LDB	0,[POINT 9,(3),8] ;Get the nbb field
+	AOS	0		;Add 1 because its stored as n-1
+	GO	PSDN
+
+;Print the fourth line
+
+	TEXT	[ASCIZ/
+HARD ERRORS DETECTED=/]
+	LDB	0,[POINT 9,2(3),26] ;Get hard err count
+	GO	PSDN
+	TEXT	[ASCIZ/    SOFT ERRORS DETECTED=/]
+	LDB	0,[POINT 9,2(3),35] ;Get soft err count
+	GO	PSDN
+
+;Print the rest of the lines as necessary
+
+	MOVE	0,2(3)		;Get 3rd word of entry to ac0
+	TLNN	0,1770		;Are any drive particular err bits set ?
+	JRST	ENTPT1		;No
+	TEXT	[ASCIZ/
+ERROR TYPE(S) DETECTED: /]
+	MOVE	1,0		;Get data to ac1
+	MOVE	2,TBPTR(X1)	;Get table pointer to ac2
+	GO	TYPBIT		;Interpret error bits 08-14
+
+;Now check the overflow bits
+
+ENTPT1:	TLNE	0,(1B17)	;Has the soft err counter overflowed ?
+	TEXT	[ASCIZ/
+SOFT ERROR COUNTER HAS OVERFLOWED/] ;Yes
+	TLNE	0,(1B16)	;Has the hard err counter overflowed ?
+	TEXT	[ASCIZ/
+HARD ERROR COUNTER HAS OVERFLOWED/] ;Yes
+
+;Tell him whether or not bbu is set
+
+	TEXT	[ASCIZ/
+ENTRY WILL/]
+	TLNN	0,(1B0)		;Is bbu set ?
+	TEXT	[ASCIZ/ NOT/]	;No
+	TEXT	[ASCIZ/ BE PUT IN BAT BLOCK/]
+	TLNE	0,(1B2)		;Is cbu set ?
+	TEXT	[ASCIZ/ (OPR CANCELED UPDATE)/]
+	TLNE	0,(1B1)		;Is ebu set ?
+	TEXT	[ASCIZ/ (OPR REQUESTED UPDATE)/]
+
+;Check the pnt bit
+	
+	TEXT	[ASCIZ/
+FURTHER ERRORS FROM THIS ADDRESS WILL/]
+	TLNN	0,(1B6)		;Is pnt bit set ?
+	TEXT	[ASCIZ/ NOT/]	;No
+	TEXT	[ASCIZ/ BE REPORTED/]
+
+;Done at last
+
+	TEXT	[ASCIZ/
+----
+
+/]
+
+ENTPTX:	GET	3		;Restore the ac's
+	GET	2
+	GET	1
+	GET	0
+	RTN			;And exit
+
+;Table defines bits where entry was found
+
+WHOTB:	070000,,000000		;These bits may be set
+	000000,,000000		;These may never be set
+	SIXBIT	/BAT/		;Came from bat block
+	SIXBIT	/PGM/		;Came from program
+	SIXBIT	/OPR/		;Came from operator
+
+;Pointers to error tables for various drives
+
+TBPTR:	ENER1			;Rp04
+	ENER1			;Rp06
+	ENER1			;Rp07 (300 mb)
+	ENER1			;Rp07 (600 mb)
+	ENER1			;Rm03
+	ENER1			;Rp06+
+	ENER1			;Rp20 (tops10)
+	ENER1			;Rp20 (tops20)
+
+;Error translator table used by typbit
+
+ENER1:	001770,,000000		;Defines bits that may be set
+	000000,,000000		;Defines bits that may never be set
+	SIXBIT	/DCK/		;A data check
+	SIXBIT	/ECH/		;Uncorrectable ecc error
+	SIXBIT	/HCRC/		;Header crc error
+	SIXBIT	/HCE/		;Header compare error
+	SIXBIT	/DTE/		;Drive timing error
+	SIXBIT	/OPI/		;Operation incomplete
+	SIXBIT	/ /		;Spare bit for now
+
+;Translates unary field "pub" to text
+
+DVTB:	000377,,000000		;These may be set
+	000000,,000000		;These may never be set
+	SIXBIT	/7/
+	SIXBIT	/6/
+	SIXBIT	/5/
+	SIXBIT	/4/
+	SIXBIT	/3/
+	SIXBIT	/2/
+	SIXBIT	/1/
+	SIXBIT	/0/
+
+	
+;Getent -- searches bat data base for an entry
+;This routine will search the currently selected drive's
+;Bat data base for an entry with the logical block
+;Number contained in ac1.
+;
+;Calling seq:
+;	Move	ac1, arg1	;arg1 contains lbn
+;	Go	getent		;search data base
+;	Rtn-1			;no such entry in data base
+;	Rtn-2			;found it. pointer in ac2.
+
+GETENT:	PUT	0		;Save ac's
+	PUT	2
+	MOVEI	2,DBSTRT(DSW)	;Get a pointer to data base
+GETNT1:	LDB	0,[POINT 14,(2),35] ;Get aprid field of current entry
+	JUMPE	0,GETNTX	;Have we reached an empty entry ?
+	LDB	0,[POINT 27,1(2),35] ;Get lbn of current entry ?
+	CAMN	0,1		;No, is this entry the one requested ?
+	JRST	GETNT2		;Yes
+	ADDI	2,3		;Bump the pointer
+	CAIL	2,DBEND(DSW)	;Have we searched entire data base ?
+	JRST	GETNTX		;Yes
+	JRST	GETNT1		;No, continue
+
+GETNT2:	MOVEM	2,(P)		;Save the pointer on stack
+	AOS	-2(P)		;And bump the return
+
+GETNTX:	GET	2		;Restore the ac's
+	GET	0
+	RTN			;And exit
+
+;Putent -- create/replace/delete mapout-data-base entries
+;This routine is passed an lbn and a pointer to a 3-word entry
+;Compatable with the mapout data base. this routine will either
+;	
+;	- Replace an existing entry with a new one
+;	- Delete an existing entry
+;	- Add a new entry to the data base
+;
+;The data base is kept sorted with each new operation by either
+;Pushing or popping the entries forward or bakward as required.
+;
+;This routine assumes a delete entry situation when the first word
+;Of the replacement entry (pointed to by ac2) is clear.
+;
+;The error return: rtn1 is taken only if you attempt to create a new
+;Entry when the data base is full. not only will the error rtn be
+;Taken but an error message stating the problem will be printed.
+;
+;This routine also tallies hard and soft error counters "hspots",
+;"Sspots" in the dsb area for totals information.
+;
+;Calling seq:
+;
+;	Move	ac2, arg2	;ptr to 3-word entry
+;	Move	ac1, arg1	;lbn
+;	Go	putent		;make the entry
+;	Rtn-1			;data base is full
+;	Rtn-2			;done
+
+PUTENT:	PUT	0		;Save ac's
+	PUT	1
+	PUT	2
+	PUT	3
+	PUT	4
+	PUT	5
+	PUT	6
+	PUT	7
+
+;Setup: move the 3 word user entry into ac5,ac6,ac7 
+;Get desired lbn to ac3
+;Get pointer to start of data base to ac4
+;Bump return for rtn2 (assumes normal)
+
+	MOVE	5,(2)		;Gets 1st user word
+	DMOVE	6,1(2)		;Gets 2nd and 3rd user word
+	LDB	3,[POINT 27,1,35] ;Gets desired lbn (ldb is a precaution)
+	MOVEI	4,DBSTRT(DSW)	;Pointer to start of the data base
+	AOS	^D-8(P)		;Now ready for rtn2
+
+;Check users 1st word. zero:cancel   non-zero:add/replace
+
+	JUMPE	5,PCAN0		;Doing a cancel entry 
+
+;Here because we're doing an add/replace type operation on data base entry
+
+PRPL1:	SKIPN	0(4)		;Is current data base entry available ?
+	JRST	PRPLA		;Yes.  go and insert here ...
+	LDB	2,[POINT 27,1(4),35] ;No. get lbn from the current entry
+	CAML	2,3		;Compare current lbn to desired lbn
+	JRST	PRPLLE		;Current lbn > = desired lbn
+	ADDI	4,3		;Current lbn < desired lbn. incr pointer
+	CAIG	4,DBEND(DSW)	;Tried entire buffer ?
+	JRST	PRPL1		;No. now try next entry
+	JRST	PRPLFL		;Yes... data base is full
+PRPLLE:	CAMG	2,3		;Must decide if > or =
+	JRST	PRPLA		;Current lbn = desired lbn
+	JFCL			;Current lbn < desired (this is an insert)
+	SKIPE	DBEND-2(DSW)	;See if last entry in data base is empty !
+	JRST	PRPLFL		;Nope...data base is full
+PRPLLS:	EXCH	5,0(4)		;Current lbn < desired lbn
+	EXCH	6,1(4)		;   Here we start a replace and shuffle
+	EXCH	7,2(4)		;   To insert new entry in the data base
+	JUMPE	5,PUTCNT	;If ac5=0 we're done (working on null data)
+	ADDI	4,3		;Not done. bump pointer
+	CAIGE	4,DBEND(DSW)	;At end of the data base ?
+	JRST	PRPLLS		;No. keep the shuffle going
+	JRST 	PUTCNT		;End of data base. done.
+
+;Here to do a straight 1 for 1 replacement
+
+PRPLA:	MOVEM	5,(4)		;Puts 1st word away
+	DMOVEM	6,1(4)		;Puts 2nd and 3rd words away
+	JRST	PUTCNT		;Done. go tally the entries
+
+;Here to print the data base full message. here we also back up the
+;Return addr on the stack for rtn1 ...
+
+PRPLFL:	TEXT	[ASCIZ/
+MAPOUT DATA BASE FULL. LBN = /]
+	MOVE	0,3		;Gets the lbn to ac0
+	GO	POCDEC		;Print in octal and decimal
+	TEXT	[ASCIZ/ NOT ENTERED
+/]
+	SOS	^D-8(P)		;Adjust for rtn1
+	JRST	PUTCNT		;We're done. go tally entries.
+
+;Here because we're doing an entry deletion..
+
+PCAN0:	SKIPN	0(4)		;Is current entry null ?
+	JRST	PUTCNT		;Yes. then we're done. 
+	LDB	2,[POINT 27,1(4),35] ;Get lbn from this entry
+	CAMN	3,2		;Is current lbn = desired lbn ?
+	JRST	PCAN1		;Yes
+	ADDI	4,3		;No. bump pointer.
+	CAIG	4,DBEND(DSW)	;Searched the entire data base ?
+	JRST	PCAN0		;No. keep looking.
+	JRST	PUTCNT		;Yes. done.
+PCAN1:	MOVE	5,3(4)		;Deleting current entry by shuffeling the
+	DMOVE	6,4(4)		;  Rest of the data base back an entry ..
+	MOVEM	5,0(4)		;  Which leaves the last entry blank
+	DMOVEM	6,1(4)		;  For certian.
+	JUMPE	5,PUTCNT	;If ac5=0 we're into null data entries
+	ADDI	4,3		;Bump pointer to next entry
+	CAIGE	4,DBEND-2(DSW)	;Go as far as 2nd last entry (this scheme)
+	JRST	PCAN1		;Not done. loop
+	SETZM	DBEND-2(DSW)	;Done. zero the last entry
+	SETZM	DBEND-1(DSW)
+	SETZM	DBEND(DSW)
+	JRST	PUTCNT		;We're done
+
+;Finished desired operation. tally entries, restore ac's and exit
+
+PUTCNT:	GO	DBCNT		;Tally entries in totals area
+	GET	7		;Restore ac's
+	GET	6
+	GET	5
+	GET	4
+	GET	3
+	GET	2
+	GET	1
+	GET	0
+	RTN			;And exit
+
+;Batsrt -- routine to sort the bat data base by lbn
+;
+;	Calling seq:
+;	Go	batsrt		;sort
+;	Rtn			;returns here always
+
+BATSRT:	PUT	1		;Save some ac's
+	PUT	2
+	PUT	3
+	PUT	4
+	MOVEI	1,DBSTRT(DSW)	;Get pointer to data base
+	MOVE	2,1		;To ac2 also
+	ADDI	2,3		;Ac2 points to second entry of data base
+BTSRT1:	LDB	3,[POINT 14,(1),35] ;Get aprid field of ac1 entry
+	JUMPE	3,BTSRT2	;Swap entries if it's empty
+	LDB	3,[POINT 14,(2),35] ;Get aprid field of ac2 entry
+	JUMPE	3,BTSRT3	;Don't swap if it's empty
+	LDB	3,[POINT 27,1(1),35] ;Get lbn of entry pointed to by ac1
+	LDB	4,[POINT 27,1(2),35] ;Get lbn of entry pointed to by ac2
+	CAMG	3,4		;Is it > lbn of entry pntd to by ac2 ?
+	JRST	BTSRT3		;No, don't swap
+
+; Swap the two entries pointed to by ac1 and ac2
+
+BTSRT2:	DMOVE	3,(1)		;Get 1st & 2nd words of entry 
+	EXCH	3,(2)		;Swap 1st words
+	EXCH	4,1(2)		;Swap 2nd words
+	DMOVEM	3,(1)		;Restore
+	MOVE	3,2(1)		;Get third word
+	EXCH	3,2(2)		;Swap third words
+	MOVEM	3,2(1)		;Restore
+
+BTSRT3:	ADDI	2,3		;Bump ac2 pointer
+	CAIGE	2,DBEND(DSW)	;Have we finished this pass ?
+	JRST	BTSRT1		;No, continue
+	ADDI	1,3		;Bump ac1 pointer
+	MOVE	2,1		;And adjust ac2 pointer accordingly
+	ADDI	2,3
+	CAIGE	2,DBEND(DSW)	;Have we finished the sort ?
+	JRST	BTSRT1		;No, start next pass
+
+BTSRTX:	GET	4		;Restore the ac's
+	GET	3
+	GET	2
+	GET	1
+	RTN			;And exit
+
+;Dbcnt -- routine to count hard and soft errors in the data base
+;
+;This routine tallies hard and soft errors and returns the results in ac1
+;On return, hard errors in ac1(r) and soft errors in ac1(l)
+;
+;Each time they are counted the values are moved to the hard and soft spot
+;Counters "hspots", "sspots" in the dsb area.
+;
+;	Call seq:
+;	Go	dbcnt		;the call
+;	Rtn1			;+1 ac1/soft count ,, hard count
+
+DBCNT:	PUT	2		;Save ac's
+	PUT	3
+	SETZM	1		;Counters now set to zero
+	MOVEI	3,DBSTRT(DSW)	;Point to start of the data base
+DBFET:	MOVE	2,(3)		;Fetch 1st word of entry
+	JUMPE	2,DBINC		;Non-entry if 1st wd is zero
+	MOVE	2,2(3)		;Good entry. get 3rd word
+	TLNE	2,400000	;Is bbu=1 ?
+	ADDI	1,1		;Yes. hard spot..
+	TLNN	2,400000	;Is bbu=0 ?
+	ADD	1,[1,,0]	;Yes. soft spot..
+DBINC:	ADDI	3,3		;Point to next entry
+	CAIGE	3,DBEND(DSW)	;At the end of data base ?
+	JRST	DBFET		;No. fetch next entry and process
+	GET	3		;Yes. restore ac's
+	GET	2
+	HRRZM	1,HSPOTS(DSW)	;Update hard spot counter
+	HLRZM	1,SSPOTS(DSW)	;Update soft spot counter
+	RTN			;And exit
+
+;Makbat -- routine to write bat blocks to disk
+;"Makbat" will write the first 61 entries of the bat data
+;Base whose bbu bit = 1 to the bat blocks of the currently
+;Selected disk.
+;
+;Call seq:
+;	Move	1,arg1		;pointer to write data buffer
+;	Go	makbat		;call the routine
+;	Rtn			;returns here always
+
+MAKBAT:	TLNN	DSW,(1B10)	;Is there user data being protected ?
+	JRST	MKBATG		;No continue
+	TEXTF	[ASCIZ/
+*****
+RUNNING-MAPOUT /]
+	GO	RUNTMF		;Print runtime
+	PCRLF
+	GO	UNITF		;Print rh, drive, etc
+	TEXTF	[ASCIZ/
+BAT BLOCKS "NOT" WRITTEN BECAUSE THERE IS USER DATA ON THE MEDIA
+*****/]
+	RTN			;Exit
+
+;Ok to write bat blocks now
+
+MKBATG:	PUT	0		;Save some ac's
+	PUT	1
+	PUT	2
+	PUT	3
+	MOVE	2,1		;Get data buffer address
+	MOVEI	1,2		;First we'll do lbn 2
+	GO	GENBAT		;Generate a clean bat block image
+	MOVEI	1,DBSTRT(DSW)	;Get pointer to bat data base
+	ADDI	2,4		;Adjust output buffer pntr to first pair
+	SETZM	3		;We'll use ac3 as an output counter
+MAKBT1:	LDB	0,[POINT 14,(1),35] ;Get aprid field
+	JUMPE	0,MAKBT3	;It's an empty entry. we're done.
+	SKIPL	2(1)		;Is bbu=1 ?
+	JRST	MAKBT2		;No, don't use this entry
+
+;The current data base entry is to be written to the bat block
+;Ac1 points to data base and ac2 points into data buffer
+
+	MOVE	0,(1)		;Get first word of bat pair
+	MOVEM	0,(2)		;Move it to output buffer
+	MOVE	0,1(1)		;Get second word of bat pair
+	MOVEM	0,1(2)		;Move it to output buffer
+	ADDI	2,2		;Adjust output buffer pointer
+	AOS	3		;Bump output counter
+	CAIL	3,^D61		;Is output buffer full ?
+	JRST	MAKBT3		;Yes
+MAKBT2:	ADDI	1,3		;Adjust data base pointer
+	CAIGE	1,DBEND(DSW)	;Have we searched whole data base yet ?
+	JRST	MAKBT1		;No, continue
+
+;We're now ready to write the bat blocks
+;Ac3 now holds count of number of bat block entries
+
+MAKBT3:	MOVE	2,-2(P)		;Get pointer to write buffer
+	DPB	3,[POINT 9,2(2),8] ;Updates "nbs" in bat block
+	DPB	3,[POINT 9,2(2),17] ;Updates "nbr" in bat block
+	LDB	3,[POINT 7,MBCN,9] ;Pull rh # out of mbcn
+	DPB	3,[POINT 7,2(2),24] ;Updates "kdc" in bat block
+MAKB3A:	MOVEI	1,2		;First we'll do lbn 2
+	GO	ADCON		;Convert to disk addr
+	MOVEI	1,61		;A write data command
+	MOVE	3,-2(P)		;Buffer address
+	HRL	3,CWRWD(X1)	;+Wc,,addr
+	GO	XFSTRT		;Start the xfer
+	GO	IOWAIT
+	GO	BRANCH		;To altmode routine
+	JRST	MAKBTX		;Altmode was struck
+	JRST	MAKB3A		;Loop
+
+MKBT4:	MOVEI	1,13		;Now we'll do lbn 13
+	MOVE	3,-2(P)		;Pointer to output buffer
+	MOVEM	1,^D127(3)	;Lbn to buffer
+	GO	ADCON		;Convert to disk addr
+	MOVEI	1,61		;Write data command
+	HRL	3,CWRWD(X1)	;+Wc,,buffer addr
+	GO	XFSTRT		;Start the transfer
+	GO	IOWAIT		;Wait for completion
+	GO	BRANCH		;Altmode routine
+	JRST	MAKBTX		;Altmode struck
+	JRST	MKBT4		;Loop
+
+MAKBTX:	GET	3		;Restore the ac's
+	GET	2
+	GET	1
+	GET	0
+	RTN			;And exit
+
+;Batdsb -- merges bat block entries into the mapout data base
+;This routine takes bat block entries and merges them into the mapout
+;Data base located in the dsb area.
+;
+;A valid bat block entry is one whose first word is non-zero, and,
+;An lbn that is a legal value for this type of drive ...
+;
+;Call seq:
+;	Move	1,arg1		;pointer to start of bat block
+;	Go	batdsb		;the call
+;	Rtn			;rtn+1 
+
+BATDSB:	PUT	1		;Save ac's
+	PUT	2
+	PUT	3
+	MOVE	3,1		;Pointer to bat block data
+	ADDI	3,4		;Point to 1st bad region pair
+	HRLI	3,^D-61		;-# Of entries makes ac3 = -cnt,,ptr
+BDSB1:	SKIPN	0(3)		;Is this entry a valid entry ?
+	JRST	BDSBN		;No. update pointer and loop
+	LDB	0,[POINT 27,1(3),35] ;Pull out the lbn ...
+	CAMLE	0,LBCE(X1)	;Is it a legal lbn for this drive ?
+	JRST	BDSBN		;No... don't merge. bat block is wrong.
+	MOVE	2,0(3)		;Yes. fetch 1st word
+	MOVEM	2,ENT1		;Put in edit buffer
+	MOVE	2,1(3)		;Fetch 2nd word
+	MOVEM	2,ENT2		;Put into edit buffer
+	LDB	2,[POINT 27,ENT2,35] ;Pick up lbn
+	MOVEM	2,LBN		;Save for consistancy
+	SETZM	ENT3		;Edit buffer now properly initialized
+
+;Look up entry in data base ...
+
+BDSB2:	MOVE	1,LBN		;Get lbn
+	GO	GETENT		;Look for the entry
+	JRST	BDSB3		;Entry not there. this is a new one.
+	GO	MERGEB		;Existing entry, merge 2 together
+	JRST	BDSB4		;Now make an data base update
+
+;New entry, initialize for data base update
+
+BDSB3:	HRLZI	1,440000	;Sets bbu=bat=1
+	IORM	1,ENT3		;Status word is now set to go
+
+;Now move the edit buffer into the data base
+
+BDSB4:	MOVEI	2,ENT1		;Pointer to the edit buffer
+	MOVE	1,LBN		;And the logical block number
+	GO	PUTENT		;Moves it to the data base
+	JFCL			;Rtn1... data base full
+	JRST	BDSBN		;Rtn2... done
+
+;Update bat block counter,,pointer and loop if necessary
+;Count = count+1 and pointer = pointer+2
+
+BDSBN:	ADDI	3,1		;Bumps pointer
+	AOBJN	3,BDSB1		;Finishes pointer update and test for done
+BDSBX:	GET	3		;Done. restore ac's
+	GET	2
+	GET	1
+	RTN
+
+;Subroutine merges existing entry with a bat block entry.
+;Ac2 points to data base entry. build bat entry in ent1, ent2, ent3
+;The data from the bat block is considered the most important of the 2
+; Entries, so what we actually do here is merge the data base entry into 
+; The existing bat block entry. the operator bits to enable or disable
+; Bat block updatind takes priority when it comes to updating bbu ..
+;
+;	Call seq:
+;	Move	2,arg2		;pointer to data base entry.
+;	Go	mergeb		;merge together in the edit buffer
+;	Rtn1			;+1 always
+
+MERGEB:	PUT	0		;Save ac's
+	PUT	1
+	PUT	2
+	HRRZ	1,0(2)		;Gets knm, aprid from data base
+	HRRZ	0,ENT1		;Gets knm, aprid from edit buffer
+	CAMN	0,1		;Are they the same
+	JRST	MERG1		;Yes. no update is necessary
+	MOVSI	1,(1B9)		;Not equal. set the mul bit
+	IORM	1,ENT1		;  In entry word-1
+MERG1:	MOVE	0,0(2)		;Get data base entry word-1
+	AND	0,[777,,0]	;Save the pub field and mul bit
+	IORM	0,ENT1		;(Or) into pub field of edit buffer
+	LDB	0,[POINT 9,ENT1,8] ;Get region from edit buffer
+	LDB	1,[POINT 9,0(2),8] ;Get region from data base entry
+	CAMGE	0,1		;Is the edit buffer value greater ?
+	DPB	1,[POINT 9,ENT1,8] ;No. then use region from data base
+	MOVE	1,2(2)		;Get entry word-3 from data base
+	TLO	1,(1B3)		;Set bat=1
+	TLNN	1,(1B2)		;Has operator cancelled bat block update ?
+	TLO	1,(1B0)		;No. then set bbu=1 in entry word-3
+	MOVEM	1,ENT3		;And save updated version in the edit buffer
+	GET	2		;Restore ac's
+	GET	1
+	GET	0
+	RTN			;And exit
+
+;Prgent -- create a mapout entry from program code
+;The program calls this routine to make a mapout entry or to update
+;An existing mapout entry.
+;
+;The program supplies in ac2, a physical disk address pointing to the
+;Block "after" the one that fails. this is where the disk address registers
+;Normally point after a data error anyway. the mapout entry/modification
+;Will be made for the block just prior to this one.
+;
+;The program supplies in ac1, a partial image of entry word-3 of a data
+;Base entry. this routine looks at the following bits of that word:
+;
+;	Bits 08-14  are (or'd) in as the status field
+;	Bits 18-26  are added to the hard error count
+;	Bits 27-35  are added to the soft error count
+;
+;The routine does the following:
+;
+;	Updates data base entry words 1-2 as required
+;	Updates hard/soft error counters and overflow flags as requires
+;	Updates error status bits in entry word-3 as required
+;	Sets bbu=1 only if hard error and cbu=0
+;
+;Calling sequence:
+;	Move	1,arg1		;image word for data base update
+;	Move	2,arg2		;cylinder,,surf,sect (18,,8,8)
+;	Go	prgent		;call the routine
+;	Rtn1			;data base is full
+;	Rtn2			;done 
+
+PRGENT:	PUT	4		;Save ac's
+	PUT	3
+	PUT	2
+	PUT	1
+	SETOM	1		;A flag for adcon
+	GO	ADCON		;Convert to lbn
+	SUBI	1,1		;Adjust to correct address
+	CAMLE	1,LBCE(X1)	;See if we have a legal value
+ILLADD:	JRST	PRGENX		;Illegal... not sure if this is possible
+	MOVEM	1,LBN		;Save the lbn
+	GO	GETENT		;Look lbn up in the data base
+	JRST	PRGEN1		;Not there yet
+	MOVE	2,2		;Lbn there .. ac2 points to entry
+	MOVEI	1,ENT1		;Pointer to edit buffer
+	GO	ENTOLD		;Do a partial merge ...
+	JRST	PRGEN2		;To some common code
+PRGEN1:	MOVE	1,LBN		;Get lbn to ac1
+	MOVEI	2,ENT1		;Pointer to edit buffer
+	GO	ENTNEW		;Create a new entry in edit buffer
+PRGEN2:	MOVE	4,ENT3		;Get entry wd-3 to ac4 for manipulation
+	TLO	4,(1B4)		;Set pgm=1
+	MOVE	2,0(P)		;Get image from the stack
+	AND	2,[1770,,0]	;Save error bits field (08-14)
+	IOR	4,2		;(Or) in the users error bits
+
+;Process hard errors if necessary
+
+	LDB	2,[POINT 9,(P),26] ;Get hard error count from image
+	JUMPE	2,PRGEN3	;Jump if no hard error update is necessary
+	TLNN	4,(1B2)		;See if user has cancelled bat block update
+	TLO	4,(1B0)		;No. hard error, set bbu=1
+	LDB	1,[POINT 9,4,26] ;Get hard entry count from ent3
+	ADD	1,2		;Sum the 2 counts
+	DPB	1,[POINT 9,4,26] ;And save in entry word-3
+	TRNE	1,1B26		;Did the field overflow ?
+	TLO	4,(1B16)	;Yes. set heo=1
+
+;Process soft errors if necessary
+
+PRGEN3:	LDB	2,[POINT 9,(P),35] ;Get soft errors from image word
+	JUMPE	2,PRGEN4	;None to process
+	LDB	1,[POINT 9,4,35] ;Get soft count from entry word-3
+	ADD	1,2		;Sum the 2 counts
+	DPB	1,[POINT 9,4,35] ;And save in entry word-3
+	TRNE	1,1B26		;Did the field overflow ?
+	TLO	4,(1B17)	;Yes. set seo=1
+
+;Save back in edit buffer and then move edit buffer into the data base
+
+PRGEN4:	MOVEM	4,ENT3		;Save in the edit buffer
+	MOVE	1,LBN		;Get the lbn to ac1
+	MOVEI	2,ENT1		;Pointer to the edit buffer
+	GO	PUTENT		;Put the entry away
+	SKIPA			;Data base full. take rtn1.
+PRGENX:	AOS	-4(P)		;Bump return for rtn2
+	GET	1		;Restore ac's
+	GET	2
+	GET	3
+	GET	4
+	RTN			;And exit
+
+;Ckenpt -- check data base entry for print status
+;This routine is called from the program to determine if an
+;Error from a particular disk address is to be reported this time or not.
+;
+;The program supplies in ac2, a physical disk address of the block
+;Followinf the one that failed. this is the normal way the disk
+;Address registers point following a data error.
+;
+;The conditions for printing:
+;	- Entry not yet in the data base
+;	- Entry is in data base but pnt=1 (operator forcing printing)
+;	- "Palers" sense switch is set to a one
+;
+;	The conditions for not printing:
+;	- Entry in data base, pnt=0 and, "palers" sense switch clear
+;
+;Calling seq:
+;	Move	2,arg2		;cyl,,surf,sect  (18,,8,8)
+;	Go	ckenpt		;call the routine
+;	Rtn1			;don't report this error
+;	Rtn2			;report this error 
+
+CKENPT:	PUT	1		;Save ac's
+	PUT	2
+	MOVE	1,CONSW		;Get console switches
+	TLNE	1,001000	;Is palers set ?
+	JRST	CKENX2		;Yes. then we're done
+	SETOM	1		;Ac1 to -1 for adcon
+	GO	ADCON		;Convert to lbn
+	SUBI	1,1		;Now pointing to correct block
+	GO	GETENT		;Lookup the lbn in the data base
+	JRST	CKENX2		;Not there. then we're done
+	MOVE	1,2(2)		;There.  fetch third word in entry
+	TLNE	1,(1B6)		;Is the pnt bit=1 ?
+CKENX2:	AOS	-2(P)		;Yes. take return-2
+CKENX1:	GET	2		;Restore ac's
+	GET	1
+	RTN			;And exit
+
+
+	END
+  

@@ -1,0 +1,319 @@
+.left margin 0
+.right margin 80
+.autoparagraph
+.first title
+.title Diagnostic List
+
+
+	This is the current list of known 36-bit diagnostics and their current
+state.  This document should be the final word.  In other words, keep this up
+to-date.
+	The following fields are kept for each diagnostic:
+
+.list ,"o"
+
+.le;^&Diag\& stands for the name of the diagnostic.
+
+.le;^&Version\& is the current version.
+
+.le;^&Sources\& is where the sources are.
+
+.le;^&Who\& is who is currently working on this diagnostic.
+
+.le;^&B\& stands for whether or not we have successfully built it.
+
+.le;^&Diagnosis\& is what the diagnostic works on.
+
+.le;^&10, 20, TS\&, and ^&EX\& is the status of the diagnostic in
+exec-mode on
+TOPS-10, TOPS-20, under time-sharing on TOPS-10, and under the EXEC on TOPS-20.
+The possible values are:
+.literal
+
+		U - Unknown.
+		N - Not applicable.  (Not suppose to work here.)
+		F - Fails in some way.
+		W - Works completely.
+.end literal
+
+.le;^&KL\& is if this diagnostic goes on the KLAD pack.
+
+.le;^&Requirements-Notes\& is for any requirements or notes.
+.end list
+.blank 5
+.subtitle Diag####Version#Sources#Who B Diagnosis 10 20 TS EX KL##Requirements-Notes
+.literal
+Diag	Version	Sources	Who B Diagnosis	10 20 TS EX KL	Requirements-Notes
+
+DDRPI	10.5	MORDOR	Ned Y RP disks	S  U  U  U  Y
+DAKAA
+DAKAB
+DAKAC
+DAKAD
+DAKAE
+DAKAF	
+DAKAG	
+DAKAH	
+DAKAI	
+DAKAJ	
+DAKAL	
+DAKAM	
+DAKBA	
+DAKBB	
+DAKBC	
+DAKBD	
+DAKCA	
+DAKCB	
+DAKDA	
+DAKDB	
+DAKEA	
+DAKEB	
+DAKFA	
+DBKAA	
+DBKAB	
+DBKAC -n
+DBKAD	
+DBKAE	
+DBKAF	
+DBKAG	
+DBKAH	
+DBKAI	
+DBKAJ	
+DBKAK	
+DBKAL	
+DBKAM	
+DBKBA	
+DBKBB	
+DBKBC	
+DBKBD	
+DBKCA	
+DBKCB	
+DBKCC	
+DBKCD	
+DBKCE	
+DBKDA	
+DBKDB	
+DBKDC	
+DBKEA	
+DBKEB	
+DBKEC	
+DBKFA	
+DBKFB	
+DBKFC	
+DBKFD	
+DDANA	
+DDANB	
+DDCPA   
+DDDAE	
+DDDAF	
+DDDCA	
+DDDFA	
+DDDLA	
+DDDLB	
+DDDLH	
+DDDMA	
+DDDXA	
+DDDXB	
+DDLTA	
+DDIPA   
+DDLPA	
+DDMMC	
+DDMMD	
+DDPCA   
+DDQCB	
+DDQDA   
+DDQDB   
+DDQDC	
+DDQDF	
+DDQDE	
+DDQDG	
+DDQDG	
+DDQDH	
+DDRHA	
+DDRMA   
+DDRMB   
+DDRMC	
+DDRPA   
+DDRPC   
+DDRPD   
+DDRPE   
+DDRPH	
+DDRPI	
+DDRPJ   
+DDRPK	
+DDTDA	
+DDTMA	
+DDTMB   
+DDTMC   
+DDTMD	
+DDTME	
+DDTMF	
+DDTMH   
+DDTMI   
+DDTMJ   
+DDTMK   
+DDTUA	
+DDTUB	
+DDTUG	
+DDTUK	
+DDVTC	
+DDXXB	
+DDXXC	
+DDXYA	
+DEDMA	
+DEMMG	
+DFCIA	
+DFCIB	
+DFCIC	
+DFCID	
+DFDLI	
+DFDNA	
+DFDRA	
+DFDTE	
+DFDXC	
+DFDXD	
+DFDXE	
+DFDXG	
+DFKAA	
+DFKAD   
+DFKBA	
+DFKBB	
+DFKCA	
+DFKCB	
+DFKCC	
+DFKDA	
+DFKEA	
+DFKEB	
+DFKEC	
+DFKDF   
+DFKED	
+DFMMH	
+DFNIA	
+DFNIB	
+DFNID	
+DFNIE	
+DFNIS	
+DFPTA	
+DFQAAC 0
+DFQABA	
+DFQDA	
+DFQDI   
+DFQDJ	
+DFQDL   
+DFRHB	
+DFRPJ   
+DFRPH	
+DFRPK	
+DFRPM	
+DFRPN	
+DFRSA	
+DFSXA	
+DFTUE	
+DFTUI	
+DFTUJ	
+DFTUK	
+DGDTE	
+DGKAA	
+DGKAB	
+DGKBA	
+DGKBB	
+DGKBC	
+DGKBD	
+DGKBE	
+DGKCA	
+DGMCA	
+DGMCB	
+DGMMA	
+DGQDA	
+DGQDF   
+DGQEA 	
+	
+	
+DGQFA	
+DGQFB	
+DGSBA	
+DHKAA	
+DHKAB	
+DHKBA	
+DHKBB	
+DHKBC	
+DHKBD	
+DHKBF	
+DHKBG	
+DHKBH	
+DHKCA	
+DHMCA	
+DHMCB	
+DHMCC	
+DHQFA	
+DXDAA	
+DXDAG	
+DXDAH	
+DXDLC	
+DXDLJ	
+DXDMC	
+DXLPB	
+DXLPRA	
+DXMCD	
+DXMCE	
+DXMPA	
+DSANA	
+DSANB	
+DSCDA	
+DSDUA	
+DSDZA	
+DSKAA	
+DSKAB   
+DSKAC   
+DSKAD	
+DSKAE	
+DSKAF
+DSKAG
+DSKAH
+DSKAI
+DSKAJ
+DSKAK
+DSKAL
+DSKAM
+DSKBA
+DSKCA
+DSKCB
+DSKCB
+DSKCC
+DSKCD
+DSKCE
+DSKCF	
+DSKCG	
+DSKDA	
+DSKEA
+DSKEB
+DSKEC
+DSKFA
+DSKMA
+DSLPA	
+DSLTA	
+DSMMA	
+DSMMB
+DSMMC	
+DSMMD	
+DSPCA
+DSPCB
+DSKAL
+DSRMA	
+DSRMB	
+DSRPA	
+DSTUA
+DSTUB
+DSUBA
+SMBC2	
+SMDDT	
+SMMAG	
+SMMON	
+SMTAPE	
+SUBSM	
+MEMLOAD	
+AJACDA
+FORMAT	
+DSTIRS	
+8080/KS10
+ROMGEN	

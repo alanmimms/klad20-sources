@@ -1,0 +1,9 @@
+To release this diagnostic:
+
+(1) Submit the batch file DFSXA.CTL/TIME:10 (make sure there are
+    2000 free pages on disk).
+(2) If failed - allow more time and disk space and repeat (1).
+(3) Give all of the files listed in DFSXA.INP to the release
+    engineer for release.
+(4) Delete the REL, LST, LOG files from this directory (ie. clean
+    it up).

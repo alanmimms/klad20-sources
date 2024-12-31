@@ -1,0 +1,1814 @@
+
+TITLE	CONFIGURATION MODULE
+
+	SEARCH	DEFINS,MONSYM
+	ENTRY	CONFIG,ASKRP,GETVER,MCODEP
+	ENTRY	DXCFG,INCRH,QSTART
+	ENTRY	SELECT,DEVSEL
+	INTERN	MBCMAX,MBCMIN,RHTBL,DEVTBL
+
+;These are found in mainline
+
+	EXTERN	FULLI,BUF1A,BUF2A,FREE,SHMODE,STARTQ,USEPI
+	EXTERN	BSYCNT,SCPPC,ERCNT,SELFLG,NORET,NORPT
+	EXTERN	SCPPC,ERCNT,..CONO,..CONI,..RDR6
+
+;These are found in mainline suport file
+
+	EXTERN	ATAWT,CLRATA,CLRERR,DUMPDR,IDENT,IDENTF,MSTCLR
+	EXTERN	SENSIN,SNAPA,SNSDMP,SNAPDR,OPRACT,DRVCLR,.IDLE,.NOP,.SNSE
+	EXTERN	.TIO,IOWAIT,XFSTRT,DUMPS,.REL,.REQ,UREQ,UREL
+	EXTERN	.PION,.PIOFF
+
+;These are found in common disk parameter file
+
+	EXTERN	CWHD,CWRWD,TYPN,TYPA,DRVNAM,DRVTYP
+	EXTERN	HOMCHK,HOMPNT,BATCHK,BATPNT,MNTTST
+	EXTERN	ADCON
+
+;These are found in the general utilities
+
+	EXTERN	QSTN,TSCAN,.GTCOR,POCDEC
+
+;These are found in controller support file
+
+	EXTERN	CHSEL,DSETUP,LDRG04,RDRG01,RDRG06
+	EXTERN	REGPNT,.CONI,.CONO,DIAGCR,LOGPNT,FFF
+	EXTERN	ENABLE,USRION,USRIOF,CCSET,CCCLR,CCCHK
+
+;These are found in the console package
+
+	EXTERN	ST,LDUP,FILEXT,FILNAM,SUBEXT,SUBFIL,CADDR,SP,RCR
+
+;These are found in the mapout module
+
+	EXTERN	BATDSB
+
+	XLIST
+	BOX	<CONSTANTS AND VAIRIABLES FOR CONFIGURATION MODULE>,<
+	BIT MEANINGS FOR RHTBL
+	----------------------
+
+	BITS 0-2	HOLD LOGICAL CHANNEL #
+	BITS 3-5	HOLD DX DRIVE #
+	BIT 6		SET IF U-CODE IS RELOADED AT CONFIG TIME
+	BIT 7		SET IF SPINDLE IS TOPS20 FORMATTED
+	BIT 8		SET TO 1 IF WE'RE USING THIS TABLE SLOT
+	BIT 9		SET IF SPINDLE NOT USEABLE
+	BIT 10		SET IF SPINDLE SELECTED AT CONFIG TIME
+	BIT 11		SET IF SPINDLE DETECTED AT CONFIG TIME
+	BIT 12		SET IF DX NOT USEABLE
+	BIT 13		SET IF DX SELECTED AT CONFIG TIME
+	BIT 14		SET IF DX DETECTED AT CONFIG TIME
+	BIT 15		SET IF RH NOT USEABLE
+	BIT 16		SET IF RH SELECTED AT CONFIG TIME
+	BIT 17		SET IF RH DETECTED AT CONFIG TIME
+	BITS 18-21	LOGICAL DRIVE TYPE (6 OR 7 FOR RP20'S)
+				6 MEANS TOPS10 FORMAT
+				7 MEANS TOPS20 FORMAT
+	BITS 28-35	SPINDLE ADDRESS (8 BITS LONG)
+
+
+	BIT MEANINGS FOR DEVTBL
+	-----------------------
+
+	BITS 0-7	INDEX (SLOT #) WITHIN THIS TABLE
+	BIT 9		SPINDLE WRITE PROTECTED
+	BIT 10		USER DATA ON THE MEDIA
+	BIT 11		ALL OPERATIONS TO MAINTENANCE CYLINDER
+	BIT 12		ALL WRITES TO THE MAINTENANCE AREA
+	BIT 13		SET IF NO BAT BLOCKS AT CONFIG
+	BIT 14		SET IF NO HOME BLOCKS AT CONFIG 
+	BIT 15		SET IF SPINDLE IS ON LINE
+	BITS 18-35	POINTER TO SPINDLES DSB (DEVICE STATUS BLOCK)
+
+	NOTE: DEVTBL AND RHTBL FORM A 72 BIT WIDE STATUS TABLE FOR EACH OF
+	THE POSSIBLE RP20'S FOUND ON A SYSTEM. THE TABLE IS SET UP
+	AT 128 WORDS IN LENGTH. THERE IS ROOM FOR A MAXIMUM OF  8
+	RH20'S, EACH WITH ONLY 1 DX20. EACH DX20 MAY HAVE UP TO 16
+	SPINDLES ATTACHED TO IT. EACH SLOT IN THESE TABLES REPRESENT
+	AN RH/DX/RP20 ADDRESS. >
+ 
+
+MBCMIN:	54000,,0		;Lowest device code
+MBCMAX:	57400,,0		;Highest device code
+
+DRMX=	^D16			;Max # spindles per dx20
+TBSIZ=	^D128			;Size of the config tables
+
+TBWD:	-TBSIZ,,0		;A general counter pointer
+
+RHTBL:	BLOCK	TBSIZ		;Our rhtbl
+DEVTBL:	BLOCK	TBSIZ		;Out device table
+
+
+
+	XLIST
+	BOX	<CONFIG - - SYSTEM CONFIGURATOR>,<
+	THIS ROUTINE DETERMINES WHICH CONTROLLERS AND DRIVES ARE
+	ON THE SYSTEM AND THEN ALLOWS FOR THE SELECTION OF WHICH
+	ONES ARE TO BE TESTED BY THE DIAGNOSTIC. 
+	THIS ROUTINE ALSO CALLS A ROUTINE TO SET UP THE PROPER
+	DIAGNOSTIC MONITOR CALL VIA A UUO OR JSYS BASED ON MONITOR 
+	TYPE.  THIS ROUTINE CAN ALSO BE RECALLED DURING THE PROGRAM 
+	FOR THE PURPOSE OF RECONFIGURING THE PROGRAM. WHEN CALLING IT OVER
+	AND OVER AGAIN IT WILL PRESERVE ALL DSB AREAS FOR PREVIOUSLY SELECTED
+	DRIVES WHICH GIVES THE ABILITY TO GO BACK AND RESELECT.  >
+
+CONFIG:	PUT	0		;Save
+	PUT	1
+	PUT	2
+
+;If we haven't done a full init, clear config tables
+
+	SKIPE	FULLI		;Have we done  full init ?
+	JRST	CONA		;Yes ?
+	MOVE	1,TBWD		;No. get a pointer word (-cnt,,0)
+	SETZM	RHTBL(1)	;Clear rhtbl entry
+	SETZM	DEVTBL(1)	;Clear devtbl entry
+	AOBJN	1,.-2		;Loop through entire table
+
+;Preliminary table setup. set up 0-7 of devtbl with entry number.
+;Set logical channel number to 0-2 of rhtbl. if rhtbl(8)=0, then clear
+;Devtbl 8-35 and rhtbl 3-35.
+
+CONA:	SETZM	0		;Clear ac0
+	MOVE	1,TBWD		;A pointer (-cnt,,0)
+TBLP:	DPB	1,[POINT 8,DEVTBL(1),7] ;Sets up devtbl 0-7
+	LDB	2,[POINT 3,1,31] ;Gets chan # from our index (16 slots/rh)
+	DPB	2,[POINT 3,RHTBL(1),2] ;Sets up rhtbl 0-2
+	MOVE	2,RHTBL(1)	;Get the rhtbl entry
+	TLNE	2,(1B8)		;This slot in use ?
+	JRST	.+3		;Yes
+	DPB	0,[POINT 28,DEVTBL(1),35] ;Clr devtbl 8-35
+	DPB	0,[POINT 33,RHTBL(1),35] ;Clr rhtbl 3-35
+	AOBJN	1,TBLP		;Loop thru entire table
+
+CONB:	MOVE	0,[JFCL]
+	MOVEM	0,UREQ		;Set these locs to no-ops
+	MOVEM	0,UREL	
+
+;If user mode, set up for diag jsys/uuo
+
+	SKIPN	USER		;User mode
+	JRST	CFGA		;No
+	GO	DSETUP		;Yes. set up jsys or uuo
+
+;Start polling hardware and setting up tables
+
+CFGA:	GO	RHDXPL		;Find out which rh's and dx's exist
+	GO	RP2TST		;Find out which rp20's exist
+	MOVE	0,[GO QSTART]	;Qstart merely starts dx20 microcode
+	MOVEM	0,UREQ		; .... After a request
+	MOVEM	0,UREL		; .... Just before a release	
+
+	GO	RPTELL		;Report what was found
+	PCRLF
+	GO	ASKRP		;Ask which to test
+	PCRLF
+
+	PUT	USEPI		;Save state of this flag
+	GO	DXCFG		;Get rp20's to be tested
+	GET	USEPI		;Restore it
+	PCRLF
+
+	GET	2		;Restore ac's
+	GET	1
+	GET	0
+	RTN			;And exit
+
+	XLIST
+	BOX	<RHDXPL -- ROUTINE TO POLL FOR RH'S AND DX'S>,<
+	THIS ROUTINE WILL SEARCH THE SYSTEM FOR ALL RH20'S AND
+	DX20'S. IT CONSIDERS AN RH20 AS EXISTING IF A CONI RETURNS
+	NON-ZERO DATA AND IT CONSIDERS A DX20 TO EXIST IF MASSBUS
+	REGISTER 6 CONTAINS THE PROPER DRIVE TYPE. THIS ROUTINE LOOKS
+	FOR NO MORE THAN 1 DX20 PER RH20.
+
+
+	CALLING SEQ:
+	GO	RHDXPL		;Do the search
+	RTN			;Returns here always>
+
+RHDXPL:	PUT	0		;Save some ac's
+	PUT	1
+	PUT	2
+	PUT	3
+	PUT	4
+	PUT	5
+
+;Init some pointers for this routine
+
+	MOVE	3,TBWD		;A general pointer (-cnt,,0)
+	MOVE	MBCN,MBCMIN	;Get first controller device code
+	MOVEI	DRIVE,0		;Get first dx20 device code
+
+;Trap control-c then turn on user iot bit
+
+	GO	CCSET		;Enable for ^c intercepts
+	GO	USRION		;Turn on user i/o privilege
+
+
+;Start looking for rh20's/dx20's in real time
+
+RHNEW:	GO	..CONI		;Issue a coni to the current rh
+	SKIPN	1		;Is the coni empty ?
+	JRST	RHNEXT		;Yes, try next rh
+	TLNE	1,(1B0)		;IS THIS RH A KLIPA?
+	JRST	RHNEXT		;Yes, try next rh
+	MOVE	0,RHTBL(3)	;Get rhtbl entry
+	TLO	0,(1B17)	;Set bit 17 (rh exists)
+	MOVEM	0,RHTBL(3)	;And restore to table
+DXNEW:	GO	..RDR6		;Read massbus register 6
+	JRST	DXNEXT		;Rae - try next dx20
+
+	LDB	2,[POINT 6,1,35];Get the drive type
+	JUMPE	2,DXNEXT	;Type = 0 is invalid
+	MOVEI	1,DRVTYP	;And table start adr
+	GO	TSCAN		;Search for valid type
+	JRST	DXNEXT		;Not valid
+	ANDI	1,17		;Save only the logical index
+
+;If not a dx20 we'll ignore... dx20/rp20 have index of 6 or 7
+
+	CAIL	1,6		;Range check
+	CAILE	1,7
+	JRST	DXNEXT		;Wrong type drive... ignore ...
+	JFCL			;Ok. continue
+
+;Have a valid rh/dx pair... rhtbl(14)=1, drive# to rhtbl(3-5) and
+;Put logical drive type into rhtbl(18-21)
+
+	MOVE	0,RHTBL(3)	;Get the rhtbl entry
+	TLO	0,(1B14)	;Dx exists bit
+	DPB	DRIVE,[POINT 3,0,5] ;Dx number now set up
+	DPB	1,[POINT 4,0,21] ;Logical drive type is now set up
+	MOVEM	0,RHTBL(3)	;And restore to rhtbl
+	MOVEI	DRIVE,7		;This prevent us from looking further
+
+;Look for dx20 in a different addrss position
+
+DXNEXT:	AOS	DRIVE		;Bump dx #
+	CAIG	DRIVE,7		;Tried all possible dx's yet
+	JRST	DXNEW		;No
+
+RHNEXT:	GO	INCRH		;Go increment the rh device code
+	ADDI	3,DRMX		;Point to next rh bank of slots
+	SETZM	DRIVE		;Reset dx20 #
+	CAMG	MBCN,MBCMAX	;Tried all possible rh's
+	JRST	RHNEW		;No
+
+;Finished the poll, turn off useriot and ctrl-c intercepts. check for ^c
+
+	GO	USRIOF		;Yes, turn off user i/o privilege
+	GO	CCCLR		;Disable ^c intercepts
+	GO	CCCHK		;Check	for ^c
+
+;This code copies some of the information from the first slot on each rh20
+;To the other 15 because they are the same ....
+;Copy: - rhtbl(0-2,3-5,14,17,18-21)
+
+	MOVE	5,TBWD		;-Cnt,,0
+	ADDI	5,RHTBL		;-Cnt,,rhtbl
+	MOVE	4,5		;-Cnt,,rhtbl
+AA:	HRLI	4,-DRMX		;-#Slots,,rhtbl
+	MOVE	0,0(5)		;Get source word
+	AND	0,[770017,,740000] ;Save desired fields and bits
+BB:	MOVE	1,0(4)		;Fetch current destination word
+	TDZ	1,[770017,,740000] ;Zero fields and bits being updated
+	IOR	1,0		;Update words from source
+	MOVEM	1,0(4)		;And save updated words
+	AOBJP	5,CC		;Bump outer loop and jump out if done
+	AOBJN	4,BB		;Bump inner loop and jump until done
+	JRST	AA		;Inner loop done. process next 16 slots
+
+;Done. restore the ac's and exit
+
+CC:	GET	5		;Restore ac's
+	GET	4
+	GET	3
+	GET	2
+	GET	1
+	GET	0
+	RTN
+
+
+	XLIST
+	BOX	<RP2TST -- ROUTINE TO FIND ALL RP20 DISK MODULES>,<
+	THIS ROUTINE PERFORMS SEVERAL FUNCTIONS, ALL HAVING TO DO WITH
+	INTERROGATING THE HARDWARE AND ADJUSTING THE CONFIGURATION TABLES
+	ACCORDINGLY. 
+
+	1. CHECK THE EXISTING DX20'S TO SEE IF U-CODE CAN BE LOADED AND
+	   STARTED. (NO LOADING TAKES PLACE IN USER MODE)
+
+	2. ESTABLISH THE SPINDLE FORMATS FOR EACH OF THE DX20'S. THEY MAY
+	   BE EITHER TOPS10, OR TOPS20. (IN USER MODE THEY ARE MADE TO
+	   MATCH THE MONITOR TYPE AT THIS POINT)
+
+	3. POLE THE CHANNEL BUSS ADDRESS 000-377 LOOKING FOR RP20 SPINDLES.
+           A SPINDLE IS ASSUMED NOT THERE IF THERE ARE INITIAL SELECTION
+	   SEQUENCE ERRORS. A SPINDLE WILL NOT BE ALLOWED IF IT REQUIRES
+	   INTERVENTION (OR) WE GET COMPOSITE ERROR OUT OF THE SELECTION
+	   SEQUENCE. 
+
+	4. WHEN FINISHED, RHTBL/DEVTBL CORRECTLY INDICATE THE AVAILABILITY
+	   OF RH/DX/SPINDLES THAT ARE AVAILABLE FOR SELECTION ...
+
+
+	CALLING SEQ:
+	GO	RP2TST		;Call the routine
+	RTN			;Returns here always>
+
+RP2TST:	PUT	1		;Save ac's
+	PUT	2
+	PUT	6
+
+;First pick a rh20/dx20 pair to go searching on...
+
+	SETOM	SELFLG		;Flag says start at beginning
+SEL:	GO	DXSEL		;Choose an rh/dx pair
+	JRST	RP2X		;Tried them all ... where done.
+	JFCL			;Rh/dx pair are chosen
+
+;We have selected an rh/dx pair. we have mbcn, drive, dsw, x1 set up
+;For the first slot in this rh/dx group.  this gets us legal values
+;So we can proceed with the code. we'll use ac6 to hold a scratch copy
+;Of this guys rhtbl entry for local use here ...
+
+	LDB	6,[POINT 8,DSW,7] ;Get the offset value for this entry
+	MOVE	6,RHTBL(6)	;Now have a copy of rhtbl entry in ac6
+
+;We need to insure a valid dsb pointer in dsw so we use free core.
+
+	HRR	DSW,FREE	;Now have a valid pointer
+
+;We'll keep our subunit in ac1 during the poling sequence
+
+	SETZM	1		;Start with subunit=0 (spindle-0)
+	HRL	DRIVE,1		;Subunit to left side of drive
+
+;Do all the status checking and set up of dx20 before polling
+
+	GO	DXINIT		;This routine handles the selected dx20
+	JRST	SEL		;Error rtn... look for next dx20 ...
+	JFCL			;Ok. microcode loaded and started
+
+;Poll for currently selected subunit ....
+
+RPPOL:	HRL	DRIVE,1		;Get the subunit into left side of drive
+	DPB	1,[POINT 8,6,35] ;Subunit to our rhtbl entry copy
+	GO	INOP		;This polls for the current subunit
+
+;Update subunit and loop till we're done
+
+	AOS	1		;Bump subunit
+	CAIG	1,377		;Check for maximum
+	JRST	RPPOL		;Try next one
+	JRST	SEL		;Look for another rh/dx pair
+
+;Done. restore things and exit
+
+RP2X:	GET	6		;Restore things
+	GET	2
+	GET	1
+	RTN			;And exit
+
+
+;Dxinit - routine to perform dx20 setup and test functions
+;
+;This routine responsible for setting up rhtbl (6,7,12,18-21)
+;For all of the slots for this rh/dx pair. it expects to find in ac6,
+;A scratch copy of the rhtbl entry for the first slot of this rh/dx
+;Group. dsw, mbcn, x1, drive are also set up correctly.
+;
+;Call seq:
+;	Go	dxinit	;the call
+;	Rtn+1 		;dx20 u-code couldnt be started
+;	Rtn+2		; ok to try to use dx20
+
+DXINIT:	PUT	0		;Save the ac's
+	PUT	1
+	PUT	2
+	PUT	3
+	SETZM	UREQ		;Ureq will not be executed after a request
+	SETZM	UREL		;Urel will not be executed before the release
+	TLZ	6,(1B12)	;Assume the dx20 is useable
+
+;Establish spindle format for this dx20 and reload microcode if reqd.
+
+	MOVE	0,MONTYP	;Get monitor type. -1=tops20  0=tops10
+	DPB	0,[POINT 1,6,7] ;This establishes format in user mode
+	SKIPE	USER		;Are we user mode ?
+	JRST	DXINT1		;Yes, then were finished with dialogue.
+POLT1:	TEXTF	[ASCIZ/
+IS DX20 #/]
+	MOVE	0,DRIVE		;Get dx20 #
+	PNT1F			;Print it
+	TEXTF	[ASCIZ/ON RH /]
+	LDB	0,[POINT 9,MBCN,11] ;Get rh #
+	PNT3F			;Print it
+	TEXTF	[ASCIZ/TO BE TOPS20 FORMAT (Y=TOPS20, N=TOPS10)/]
+	TLZ	6,(1B7)		;Assume tops10 format
+	GO	QSTN		;Ask the question
+	JRST	POLT1		;Timeout
+	SKIPA			;Answer no
+	TLO	6,(1B7)		;Yes, set tops20 format bit
+	SKIPA
+POLT2:	PCRLF
+	TEXTF	[ASCIZ/DO YOU WISH TO RELOAD THE MICRO-CODE IN THIS DX20  ? /]
+	TLZ	6,(1B6)		;Assume no reload
+	GO	QSTN		;Ask the question
+	JRST	POLT2		;Timeout
+	SKIPA			;Answer no
+	TLO	6,(1B6)		;Yes. set the reload bit.
+
+;Now load/start microcode if necessary and check status
+;First we adjust logical type according to format thats chosen ...
+
+DXINT1:	TLNE	6,(1B7)		;Is the format tops20 ?
+	ADDI	6,040000	;Yes. this adds 1 to logical type field
+	LDB	X1,[POINT 4,6,21] ;Get logical type set up
+	GO	.REL		;Relase the device
+	GO	.REQ		;Request the device
+	GO	MSTCLR		;Initialize the rh20
+	TLNE	6,(1B6)		;Do we want to reload this dx20 ?
+	GO	MCLOAD		;Yes, do so.
+	GO	QSTART		;Start the ucode
+	SETZM	1		;Clear ac1
+	GO	RDRG01		;Read the dx20 status register
+	JFCL			;Cbto
+	JFCL			;Rae other than cbto
+
+	MOVE	0,[GO QSTART]	;Set up to do quick restart microcode
+	MOVEM	UREQ
+	MOVEM	UREL
+	GO	.REL		;Release the device
+
+	TRNE	1,1B23		;Reg-03 data in ac1. is u-code running ?
+	JRST	DXINTX		;Yes, give good return
+
+;Problem on the dx20 ..
+
+	TLO	6,(1B12)	;Set the rhtbl can't use bit
+	TEXTF	[ASCIZ/
+PROBLEM-CAN'T START U-CODE ON RH/]
+	LDB	0,[POINT 9,MBCN,11]
+	PNT3F
+	TEXTF	[ASCIZ/ DX20-#/]
+	MOVE	0,DRIVE
+	PNT1F
+	TEXTF	[ASCIZ/THIS DX20 IS BEING SKIPPED OVER
+*****
+/]
+	JRST	DXINTY
+
+;Update all rhtbl entries for all slots on this rh/dx pair and exit
+;We update rhtbl(6,7,12,18-21) from ac6 current contents ...
+
+DXINTX:	AOS	-4(P)		;No error.  give a skip return
+DXINTY:	LDB	2,[POINT 8,DSW,7] ;Rhtbl index comes from dsw
+	HRLI	2,-DRMX		;-#Slots,,index
+	MOVE	1,6		;Copy update info to ac1
+	AND	1,[006040,,740000] ;Save only bits to be updated
+DXUP1:	MOVE	0,RHTBL(2)	;Get entry from rhtbl
+	TDZ	0,[006040,,740000] ;Clear bits that will be updated
+	IOR	0,1		;Update the appropriate bits
+	MOVEM	0,RHTBL(2)	;Put updated word back in rhtbl
+	AOBJN	2,DXUP1		;Loop through all slots
+
+;All done ... restore and exit
+
+	GET	3		;Restore the ac's
+	GET	2
+	GET	1
+	GET	0
+	RTN
+
+;Inop - a routine to check status of currently selected spindle
+;
+;This routine goes out and tests the selected spindle to determine if:
+;	1. Its there
+;	2. Its on line and useable
+;
+;A spindle that is there will be marked not useable if it requires 
+;Intervention or, a composite error sets during the initial selection 
+;Sequences performed on the channel bus ...
+;
+;The very last thing it does is to update the rhtbl/devtbl entries
+;According to what this routine determines...
+;
+;Call sequence:
+;	Go	inop		;cal the routine
+;	Rtn+1			;always
+
+INOP:	PUT	0		;Save the ac's
+	PUT	1
+
+;Set up pi system and do the necessary i/o ..
+
+	PUT	USEPI		;Save this flag
+	SETZM	USEPI		;Don't use pi system
+	GO	.REL		;Releas rh if we have it
+	GO	.REQ		;Request the device
+	GO	DRVCLR		;Clear the dx20
+	SETZM	BSYCNT		;Clear out expected interrupt count
+	GO	.TIO		;Issue a test-i/o to the rh/dx/rp
+	GO	ATAWT		;Wait for the attention
+	GO	DRVCLR		;Drive clear again
+	GO	.TIO		;Two selects in case port was shut down
+	GO	ATAWT		;Wait for the attention
+	GO	SNAPA		;Get the registers
+	GO	SENSIN		;Get the sense bytes into dsb
+	GO	DRVCLR		;Clear the dx20
+	GO	.REL		;And release the device
+
+;The i/o is completed.. now test hardware status
+
+	TLO	6,(1B11)	;Assume spindle there
+	TLZ	6,(1B9)		;Assume spindle is useable
+	MOVE	1,R1D(DSW)	;Get status reg data
+	TRNN	1,1B21		;Comp error ?
+	JRST	INOPC		;No. drive is there and ok to try
+
+;Composite error. find out if not there or what !!
+
+BADDRV:	LDB	1,[POINT 4,R2D(DSW),27] ;Get error class
+	CAIN	1,3		;Is it a select error ?
+	JRST	INOPS		;Yes, done with this drive
+
+	MOVE	1,SBYT0(DSW)	;Get sense byte 0
+	TRNN	1,SBIT1		;Is intervention required set ?
+	JRST	INER		;No, some other error
+	TEXTF	[ASCIZ/
+THE FOLLOWING IS SKIPPED. IT REQUIRES INTERVENTION.
+/]
+	GO	IDENTF
+	JRST	INOPS		;Done with this drive
+INER:	TEXTF	[ASCIZ/
+STATUS INDICATES ERROR CONDITION LOOKING FOR RP20
+/]
+	GO	IDENTF
+	PCRL
+	GO	DUMPDR		;Dump dx registers
+	JRST	INOPC		;Done with this drive
+
+;Here because of select error ... assume no drive at this address
+
+INOPS:	TLZ	6,(1B11)	;Mark drive as not there
+	JRST	INOPC		;To common code
+
+;Update tables rhtbl/devtbl according to current dsw and ac6 (rhtbl image)
+
+INOPC:	GO	TBLUPD		;Update the tables now
+
+INOPX:	GET	USEPI		;Restore the flag
+	GET	1		;Restore the ac's
+	GET	0
+	RTN
+
+
+;Tblupd -- a table update routine called from inop
+;
+;This routine is used to update rhtbl/devtbl after we've polled for a 
+;Particular spindle. at this point in time, the dsw for the current 
+;Spindle is in dsw and the current rhtbl image is in ac6. 
+;
+;The only valid piece of information we really have for determining
+;Where in the table we go is contained in ac6. we must search rhtbl
+;For he drive and based on what we find there we update accordingly:
+;
+; A.	if there is a slot already assigned for this drive we update
+;	Its status according to ac6 and dsw.
+;
+; B.	if there is not a slot assigned and a new drive has appeared
+;	We assign a slot for its use and plug in the ac6/dsw status
+;
+;When we update the tables we update devtbl(8-17) from dsw(8-17) and
+;Rhtbl(6-35) from ac6(6-35).
+;
+;Call seq:
+;	Move	dsw,arg1		;get valid dsw data to the ac
+;	Move	6,arg2			;valid rhtbl image in ac6
+;	Go	tblupd			;update the tables
+;	Rtn				;returns here
+;
+;This routine gives an error message if you ever try to make a new table
+;Entry but the table is full. this can only happen if you configure more
+;Than 16 spindles on a dx which is a violation of the configuration rules.
+;If this happens, the additional drives will be ignored.
+
+TBLUPD:	PUT	0		;Save things
+	PUT	1
+	PUT	2
+	PUT	3
+	PUT	DSW
+	PUT	6
+
+;Build a pointer to start of the bank of slots for this rh. we know that
+;The offset to the first slot is contained right now in dsw(0-7).
+
+	LDB	3,[POINT 8,DSW,7]	;Get offset to start of group
+	HRLI	3,-DRMX		;-#Slots,,offset to first
+
+;Search bank of slots for the spindle address currently in ac6(28-35)
+
+TBUP1:	MOVE	1,RHTBL(3)	;Fetch current rhtbl entry
+	TLNN	1,(1B8)		;Is this slot in use ?
+	JRST	TBUP3		;No. update pointer and keep looking
+	ANDI	1,377		;Yes.  save slots spindle address
+	LDB	0,[POINT 8,6,35] ;Get desired spindle address from ac6
+	CAME	0,1		;Do spindle numbers match ?
+	JRST	TBUP3		;No. update pointer and keep looking
+
+;Found the correct slot. update devtbl and rhtbl from dsw and ac6
+
+TBUP2:	LDB	1,[POINT 10,DSW,17] ;Get dsw(8-17)
+	DPB	1,[POINT 10,DEVTBL(3),17] ;Put into devtbl(8-17)
+	DPB	6,[POINT 30,RHTBL(3),35] ;Put ac6(6-35) to rhtbl(6-35)
+	JRST	TBUPX		;Done. time to exit
+
+;Update pointer and loop thru table looking for spindle. if we finish
+;Without finding it we proceed to next section of code who tries to
+;Create a slot for this spindle.
+
+TBUP3:	AOBJN	3,TBUP1		;Bump and loop if not done
+
+;We want to create a new slot only if this drive is there and useable
+;Otherwise we're done ....  in order to see if useable we look at our
+;Rhtbl image corrently in ac6. the new guy is useable iff:
+; Ac6(11,14,17)=1  and  ac6(9)=0
+
+	MOVE	2,6		;Get a scratch copy to ac2
+	TLC	2,(1B11!1B14!1B17) ;Complement the expected one bits
+	TLNE	2,(1B9!1B11!1B14!1B17) ;Is drive useable ?
+	JRST	TBUPX		;No. don't update the table
+	JRST	TBUP4		;Yes. try to create an entry
+
+;Here we re initialize our pointer before proceeding
+
+TBUP4:	LDB	3,[POINT 8,DSW,7] ;Offset to 1st slot in group
+	HRLI	3,-DRMX		;-# Slots,,pointer to the first
+
+;Search for empty slot and make a new entry for the unit specified
+;In ac6 in dsw.
+
+TBUP5:	MOVE	1,RHTBL(3)	;Fetch current rhtbl entry
+	TLNE	1,(1B8)		;Is the slot in use ?
+	JRST	TBUP7		;Yes. update pointer and keep looking
+
+;Found free slot. assign it, update devtbl and rhtbl from ac6 and dsw
+;In this case we also invalidate dsp pointer devtbl(18-35)
+
+TBUP6:	TLO	6,(1B8)		;Set the "slot in use" bit
+	DPB	6,[POINT 30,RHTBL(3),35] ;Ac6(6-35) to rhtbl(6-35)
+	LDB	1,[POINT 10,DSW,17] ;Get dsw(8-17)
+	DPB	1,[POINT 10,DEVTBL(3),17] ;Put into devtbl(8-17)
+	SETZM	1		;Clear ac1
+	HRRM	1,DEVTBL(3)	;Clears dsb pointer, devtbl(18-35)
+	JRST	TBUPX		;Done. time to exit.
+
+;Update pointer and loop, looking for a free slot. if we finish without
+;Finding one we print error message and continue ....
+
+TBUP7:	AOBJN	3,TBUP5		;Bump pointer and loop if not done
+	JRST	TBUP8		;Finished and found no free slots
+
+;Error ... all slots are used. print error message and continue
+
+TBUP8:	TEXTF	[ASCIZ/
+PROGRAM AT MAXIMUM CONFIGURATION FOR THIS DX20 AND THE FOLLOWING RP20
+CAN NOT BE TESTED:  /]
+	GO	IDENTF		;Identify rh/dx/rp20
+	PCRLF			;Advance a line
+	JRST	TBUPX		;Exit
+
+;Restore ac's and exit
+
+TBUPX:	GET	6
+	GET	DSW
+	GET	3
+	GET	2
+	GET	1
+	GET	0
+	RTN			;Exit
+
+	XLIST
+	BOX	<RPTELL -- REPORT WHAT RP20'S WERE FOUND>,<
+	THIS ROUTINE GOES DOWN THE CONFIG TABLES AND REPORTS WHICH
+	RH20/DX20/SPINDLES EXIST ....
+
+	AN ENTRY IS REPORTED AS EXISTING IF: 
+	RHTBL(11,14,17)=1  (MEANS THERE THERE)
+	RHTBL(9,12,15=0 (MEANS OK TO TRY TO USE)
+
+	CALLING SEQ:
+	GO	RPTELL		;Report
+	RTN+1			;Returns here always>
+
+RPTELL:	GO	CKTBSP		;See first if any are available
+	PUT	0		;Save some ac's
+	PUT	1
+	PUT	2
+
+;First print our header. we know there's at least 1
+
+	TEXTF	[ASCIZ/
+THE FOLLOWING CONFIGURATION IS SELECTABLE
+
+RH20'S	DX20'S	RP20'S
+------	------	------/]
+
+;Initialize pointers and look for entries to report
+
+	MOVE	2,TBWD		;-Cnt,,0
+
+;Sit in this loop till we find first entry
+ 
+RTAG1:	MOVE	1,RHTBL(2)	;Fetch an rhtbl entry
+	TLC	1,(1B11!1B14!1B17) ;Set up the exists bits
+	TLNE	1,(1B9!1B11!1B12!1B14!1B15!1B17) ;Is this entry useable ?
+	AOBJN	2,RTAG1		;No ... try more.
+	
+;Found an entry ... report it
+	
+NEWRH:	PCRLF			;Start at new line
+	LDB	0,[POINT 3,1,2] ;Get chan # of this rp20
+	MOVEM	0,CHNSAV#	;Save for look ahead ...
+	LSH	0,2		;X4
+	ADDI	0,540		;Build an rh device code
+	PNT3F
+	TEXTF	[ASCIZ/    /]
+	LDB	0,[POINT 3,1,5] ;Get dx20 #
+	MOVEM	0,DXSAV#	;Save for look ahead
+	PNT1F
+	TEXTF	[ASCIZ/      /]
+RPPNT:	LDB	0,[POINT 8,1,35] ;Get device address
+	PNT3F
+
+;Process next entry with look ahead and decide if we need to start
+;A new line or continue on the same one with spaces separating ..
+
+RTAG2:	AOBJP	2,RPTDON	;Bump pointer and jump when done
+	MOVE	1,RHTBL(2)	;Fetch an rhtbl entry
+	TLC	1,(1B11!1B14!1B17) ;Set up the exists bits
+	TLNE	1,(1B9!1B11!1B12!1B14!1B15!1B17) ;Is this entry useable ?
+	JRST	RTAG2		;No ... try more.
+
+	LDB	0,[POINT 3,1,2] ;Get chn #
+	CAME	0,CHNSAV	;Is this rp20 on same rh as last one ?
+	JRST	NEWRH		;No. advance to next line and process.
+	LDB	0,[POINT 3,1,5] ;Get dx #
+	CAME	0,DXSAV		;Same dx ?
+	JRST	NEWRH		;No. advance to next line and process
+	JRST	RPPNT		;Report it
+
+;Restore and exit code
+
+RPTDON:	GET	2		;Restore the ac's
+	GET	1
+	GET	0
+	RTN
+
+
+	XLIST
+	BOX	<ASKRP -- INPUTS RH/DX/SPINDLES TO BE TESTED>,<
+	INPUTS A STRING OF DRIVE NUMBERS SEPARATED BY COMMMAS
+	OR WILL ALSO ACCEPT THE CHARACTER "A" FOR ALL DRIVES
+	THAT ARE AVAILABLE OR "N" FOR NONE ON A PARTICULAR RH.
+
+	CALL SEQ:
+
+	GO	ASKRP		;The call
+	RTN1			;Return here  > 
+
+
+ASKRP:	PUT	0		;Save some ac's
+	PUT	1
+	PUT	2
+	PUT	3
+	PUT	4
+
+;First run down rhtbl clearing all the select bits ..
+
+	MOVE	1,TBWD		;Get -cnt,,0
+	MOVE	2,RHTBL(1)	;Fetch a devtbl entry
+	TLZ	2,(1B10!1B13!1B16) ;Clear all selection bits
+	MOVEM	2,RHTBL(1)	;Put it back
+	AOBJN	1,.-3		;Loop thru entire devtbl
+
+	TEXTF	[ASCIZ/
+
+DO YOU WISH AUTOMATIC SELECTION (USE ALL DRIVES) ?/]
+	SETZM	ATOCON#		;Clear the auto-config flag
+	GO	QSTN		;Ask the question
+	JRST	.-3		;Timeout
+	SKIPA			;Answer is no
+	JRST	ASKRR3		;Yes do an auto select
+
+;Here we pick a useable rh/dx pair to work on ..
+
+	SETOM	SELFLG		;Set the select flag
+ASKRPM:	GO	DXSEL		;Select rh/dx pair
+	JRST	ASKRPX		;Tried 'em all
+ASKRPN:	MOVEI	CRLF
+	PNTAF
+	MOVE	0,CONSW		;Get switches
+	TLNE	0,TXTINH	;Normal or short printout mode ?
+	JRST	ASKRN1		;Short
+	TEXTF	[ASCIZ/SELECT RP20'S (000-377, A=ALL, N=NONE)
+ON RH-/]
+	JRST	ASKRN2
+ASKRN1:	TEXTF	[ASCIZ/DRIVES ON /]
+ASKRN2:	LDB	[POINT 7,MBCN,9] ;Get rh dev code
+	LSH	2		;Position for printing
+	PNT3F			;Print it
+	TEXTF	[ASCIZ/ DX-/]
+	MOVE	0,DRIVE		;Get dx20 #
+	PNT1F
+	TEXTF	[ASCIZ/= /]
+ASKRPQ:	TTIOCT			;Input some octal
+	JRST	ASKRER		;Error return
+	CAIL	0,0		;Normal return. ranget test
+	CAILE	0,377
+	JRST	ASKRPN		;Out of range
+
+;Input is valid. scan our table to see if this spindle is there,
+;If not, go back and re-prompt. spindle # is now in ac0.
+
+PROSPN:	JFCL
+	MOVE	3,TBNDX		;Get current table index
+	ADDI	3,RHTBL		;-Cnt,,point to 1st slot on rh
+	HRLI	3,-DRMX		;-# Slots,,pointer to first
+	SUB	3,[1,,1]	;Back up by one to initialize
+ASKT2:	AOBJP	3,SPINER	;Look through all slots
+
+;Search for the desired spindle. we look at the in-use slots rhtbl(8)=1
+;The spindle number comes from rhtbl(28-35).
+
+	MOVE	1,(3)		;Fetch rhtbl entry
+	TLNN	1,(1B8)		;Slot in use ?
+	JRST	ASKT2		;No. look for another
+	LDB	2,[POINT 8,1,35] ;Get spindle address
+	CAME	2,0		;Is it the one we want ?
+	JRST	ASKT2		;No. look further.
+
+;Found the slot see if its useable rhtbl(8,11,14,17)=1 
+;And rhtbl(9,12,15)=0      if ok, select by setting rhtbl(10,13,16)=1
+
+	TLC	1,(1B8!1B11!1B14!1B17) ;Complement expected 1 bits
+	TLNE	1,(1B8!1B9!1B11!1B12!1B14!1B15!1B17) ;Status ok ?
+	JRST	SPINER		;No ... report and continue
+	MOVE	1,(3)		;Yes. fetch clean copy
+	TLO	1,(1B10!1B13!1B16) ;Set the select bits
+	MOVEM	1,(3)		;Put back in table
+	JRST	ASKT3		;Process next char to see whats next
+
+;Here because we don't have selected spindle in config tables.
+;Merely tell user, don't select this spindle and continue on ....
+
+SPINER:	TEXT	[ASCIZ/
+RP20 #/]
+	PNT3			;Identify spindle by number
+	TEXT	[ASCIZ/ IS NOT THERE OR IS NOT USEABLE
+AND WILL NOT BE SELECTED FOR TEST
+
+/]
+	JRST	ASKT3		;Look at next thing to do
+
+
+;Done with this spindle, see if next char is delimiter or end of line
+
+ASKT3:	MOVE	$CHRIN		;Get the next char
+	CAIN	0,15		;Is it a cr ?
+	JRST	ASKRPM		;Yes. lets work on next rh/dx pair
+	JRST	ASKRPQ		;No. go process next spindle number.
+
+
+;Input error handler. checks for possibility of "a" or "n"
+
+ASKRER:	CAIN	0,"A"		;Is char an "a" ?
+	JRST	ASKRR1		;Yes
+	CAIN	0,"N"		;Is char a "n"
+	JRST	ASKRPM		;Yes
+	JRST	ASKRPN		;No. input error, re-prompt.
+
+;This is the "a" processor. he wants all spindles on this rh.
+;We set rhtbl(10,13,16) for all slots whose rhtbl(8,11,14,17)=1
+;And rhtbl(9,12,15)=0
+
+ASKRR1:	MOVE	3,TBNDX		;Get current table index
+	ADDI	3,RHTBL		;Make it -cnt,,pointer
+	HRLI	3,-DRMX		;-# Slots,,pointer to first
+	SUB	3,[1,,1]	;Point in front of first one
+ASKT4:	AOBJP	3,ASKRPM	;Bump pointer. get out when done ..
+	MOVE	1,(3)		;Get current untbl entry
+	TLC	1,(1B8!1B11!1B14!1B17) ;Comp bits that should be 1
+	TLNE	1,(1B8!1B9!1B11!1B12!1B14!1B15!1B17) ;Is entry useable ?
+	JRST	ASKT4		;No. loop and try next entry
+	MOVE	1,(3)		;Yes. refetch table entry
+	TLO	1,(1B10!1B13!1B16) ;Set the selected bits
+	MOVEM	1,(3)		;Put it back in table
+	JRST	ASKT4		;Process all slots on this rh
+
+;This is the auto-config processor. want all spindles in the table.
+;We set rhtbl(10,13,16) for all entries whose rhtbl(8,11,14,17)=1
+;And rhtbl(9,12,15)=0
+
+ASKRR3:	SETOM	ATOCON		;Set the auto-config flag
+	MOVE	3,TBWD		;-Cnt,,0
+	SUBI	3,1		;Back pointer up for initialization
+ASKT5:	AOBJP	3,ASKRPX	;Bump pointer. get out when done ..
+	MOVE	1,RHTBL(3)	;Get current untbl entry
+	TLC	1,(1B8!1B11!1B14!1B17) ;Comp bits that should be 1
+	TLNE	1,(1B8!1B9!1B11!1B12!1B14!1B15!1B17) ;Is entry useable ?
+	JRST	ASKT5		;No. loop and try next entry
+	MOVE	1,RHTBL(3)	;Yes. refetch table entry
+	TLO	1,(1B10!1B13!1B16) ;Set the selected bits
+	MOVEM	1,RHTBL(3)	;Put it back in table
+	JRST	ASKT5		;Loop thru rest of table
+
+;Restore ac's and exit this routine
+
+ASKRPX:	GET	4		;Restore ac's
+	GET	3
+	GET	2
+	GET	1
+	GET	0
+	RTN			;And exit
+
+
+	XLIST
+	BOX	<DXCFG - HERE IS WHERE WE CHOOSE RUN TIME OPTIONS>,<
+	ON EACH OF THE SELECTED DRIVES WE PERFORM THE FOLLOWING:
+	1. ESTABLISH VALIDITY OF BAT BLOCKS
+	2. ESTABLISH VALIDITY OF HOME BLOCKS
+	3. ESTABLISH VALIDITY OF USER DATA ON THE MEDIA	
+	4. ESTABLISH WHERE TO READ/WRITE (CE CYL ETC.)
+	5. ESTABLISH IF STRUCTURE IS MOUNTED
+
+	THIS ROUTINE DOES NOT SAVE ANY AC'S
+	CALL SEQ:
+	GO	DXCFG		;Call
+	RTN+1			;Always returns here >
+
+DXCFG:	PUT	USEPI		;Save things
+	PUT	0
+	PUT	1
+	PUT	2
+	PUT	3
+	SETZM	USEPI		;Don't use pi system
+
+;Init select flag and pick a drive for test
+
+	SETOM	SELFLG		;Select first unit
+	SKIPA			;Skip next instr. first time thru.
+DXCFGS:	MOVEM	DSW,@(DSW)	;Put current dsw word back in devtbl
+	GO	DEVSEL		;Do it
+	JRST	DXCFGX		;Tried all. done.
+
+;Have chosen an rh/dx/spindle pair. check for and build a valid 
+;Dsb pointer if required...
+
+
+	TRNN	DSW,777777	;Dsw ptr = 0 ?
+	JRST	GS0		;Yes. go assign a dsb area
+	HRRZ	0,DSW		;No. get pointer value
+	CAME	0,FREE		;Pointing to free core ?
+	JRST	GS0A		;No. then pointer is already assigned
+
+;Here is where the dsb is assigned for the first time
+;After it's assigned, it's cleared except for the first location.
+;The first location is a pointer back to the location in devtbl
+;Where dsw originated. it serves as a cross reference pointer so
+;The master copy of dsw can be kept up to date on the fly as drive
+;Status changes. you can say 'movem dsw,@(dsw)' to update devtbl.
+;After we assign a dsb area to the free one, we create a new free
+;Core area the size of a dsb to replace the one we've used.
+
+GS0:	HRR	DSW,FREE	;Point to free dsb area
+	SETZM	0(DSW)		;Clear first loc of dsb
+	HRRZ	1,DSW		;Pointer to first word
+	ADDI	1,DSBSIZ	;Now pointing to last word
+	HRLZ	2,DSW		;Source,,0
+	HRR	2,DSW		;Source,,source
+	ADDI	2,1		;Source,,dest
+	BLT	2,(1)		;Clears the dsb area
+	LDB	1,[POINT 8,DSW,7] ;Gets table offset
+	ADDI	1,DEVTBL	;Now have pointer into devtbl
+	HRRM	1,(DSW)		;Into dsb and pointing back to devtbl entry
+
+	MOVEI	1,DSBSIZ	;Now build a new free core area
+	GO	.GTCOR		;Gets and clears core
+	MOVEM	1,FREE		;Saves the pointer ....
+
+
+;First we reset all the option flags and save current dsw copy
+
+GS0A:	TLZ	DSW,1777	;This clears dsw(8-17)
+	MOVEM	DSW,@(DSW)	;And puts back in devtbl
+
+;Print header message and then proceed
+
+	PCRLF
+	TEXTF	[ASCIZ/
+THIS IS ONE OF THE CONFIGURATIONS SELECTED
+/]
+	GO	IDENT		;Identify rh/dx/rp20/spindle
+
+;Perform basic i/o to obtain hardware status
+
+GS1:	TLZ	DSW,(1B9)	;Assume write-enabled
+	TLO	DSW,(1B15)	;Assume on-line
+	SETZM	BSYCNT		;Clear the busy counter
+	GO	.REQ		;Request the device
+	GO	CLRERR		;Clear the error register
+	GO 	.IDLE		;Idle the dx20
+	GO	.SNSE		;Issue sense and input
+	GO	GETVER		;Reads dx20 microcode version into ac1
+	DPB	1,[POINT 16,MCDVER(DSW),35] ;Save 16 bits
+	GO	.REL		;Release the device
+
+;Report dx20 microcode version
+
+	MOVE	1,MCDVER(DSW)	;Get microcode version
+	GO	MCODEP		;Print microcode version (not forced)
+
+;I/o done. see if drive on-line
+
+	MOVE	1,SBYT0(DSW)	;Get sense byte 0
+	TRNN	1,SBIT1		;Check on-line
+	JRST	GS2		;On-line
+	TLZ	DSW,(1B15)	;Mark drive off-line
+	TEXTF	[ASCIZ/
+UNIT IS OFF LINE AND WILL NOT BE TESTED
+/]
+	JRST	GS9		;Yes, mark device not useable
+
+;On line. see if write protected ..
+;If write protected, just flag it, and report it and then continue
+;A write protected drive is still useable and decisions on this matter
+;Will be made at the test level
+
+GS2:	MOVE	1,SBYT1(DSW)	;Get byte 1
+	TRNN	1,SBIT6		;Write protected
+	JRST	GS3		;No
+	TLO	DSW,(1B9)	;Mark as write protected
+	TEXTF	[ASCIZ/UNIT IS WRITE PROTECTED
+/]
+	JRST	GS3		;And continue
+
+
+;We are now on-line and write-protect state is established ...
+;Now we read ad check for valid bat blocks
+
+GS3:	TLO	DSW,(1B15)	;Set on-line
+	TLZ	DSW,(1B13)	;Assumes that bat blocks are valid
+	MOVE	1,BUF1A		;Get buffer address
+	MOVEI	2,2		;Want block #2
+	GO	RDBAT		;Read the block into core and check it
+	TLNE	DSW,(1B13)	;Is bat block ok ?
+	JRST	GS4		;No. try other
+	MOVE	1,BUF1A		;Ok so far... check contents
+	GO	BATCHK		;Checks for valid contents
+	SKIPA			;Rtn-1 invalid bat block
+	JRST	GS5		;Rtn-2 valid bat block
+GS4:	TLZ	DSW,(1B13)	;Assume next block is valid
+	MOVEI	2,13		;Want block #13
+	GO	RDBAT		;Read bat block 13 into core
+GS5:	MOVE	1,BUF1A		;Get start of buffer
+	GO	BATPNT		;Print status of bat blocks
+	TLO	DSW,(1B13)	;Rtn-1 invalid bat block
+	JFCL			;Rtn-2 valid bat block
+	TLNE	DSW,(1B13)	;Is there a valid bat block ?
+	JRST	GS6		;No ...
+	MOVE	1,BUF1A		;Yes, get pointer to buffer
+	GO	BATDSB		;Move entries into dsb area (mapout dat base)
+
+;We have read bat blocks. now read and check for valid home blocks.
+;The media is considered to have home blocks if either is good.
+
+GS6:	TLZ	DSW,(1B14)	;Start by assuming home blocks ok
+	MOVE	1,BUF1A		;Get the buffer address
+	MOVEI	2,1		;# Of first home block
+	GO	RDHOM		;Go and try to read it
+	TLNE	DSW,(1B14)	;Does home block look ok ?
+	JRST	GS6A		;No. go report
+	MOVE	1,BUF1A		;Point to data buffer
+	GO	HOMCHK		;Check for valid home block contents
+	JRST	GS6A		;Rtn-1 invalid
+	JRST	GS6C		;Rtn-2 valid
+GS6A:	TLZ	DSW,(1B14)	;Assume 2nd home block is valid
+	MOVE	1,BUF1A		;Get buffer address
+	MOVEI	2,12		;# Of 2nd home block
+	GO	RDHOM		;Go read it
+GS6C:	SETZM	MONNAM(DSW)	;Clear dsb area locations
+	SETZM	PAKID(DSW)	;For monitor and structure names
+	MOVE	1,BUF1A		;Get starting addr of buffer
+	GO	HOMPNT		;Print home block status and i.d.
+	JRST	GS6D		;Invalid block
+	MOVEM	1,MONNAM(DSW)	;Save monitor name from home block
+	MOVEM	2,PAKID(DSW)	;Save structure name from home block
+	JRST	GS7		;And continue
+GS6D:	TLO	DSW,(1B14)	;Mark unit as having no home block
+
+;Find out about the state of user data on the media
+
+GS7:	TLZ	DSW,(1B10!1B11!1B12) ;Init some bits to zero
+	SKIPE	ATOCON		;Are we doing auto-config ?
+	JRST	GS8A		;Yes, avoid the dialogue
+
+;Set up ac's for mounted structure test
+
+	MOVE	2,MBCN		;Get rh # to ac2 3-9
+	DPB	DRIVE,[POINT 3,2,26] ;Dx number in at bit 26
+	HLRZ	0,DRIVE		;Get subunit # from drive(left)
+	DPB	0,[POINT 8,2,35] ;Put subunit number in at bit 35
+	MOVE	1,PAKID(DSW)	;Get the structure name read from home block
+	GO	MNTTST		;See if structure is mounted
+	JRST	GS7Q		;Structure is not-mounted. go query user.
+	TEXTF	[ASCIZ/****** THIS UNIT IS CURRENTLY A MOUNTED STRUCTURE ******
+THE PROGRAM WILL ALLOW WRITES ONLY TO THE MAINTENANCE CYLINDER(S)
+/]
+	JRST	GS7S		;Skip the user query about user data
+GS7Q:	TEXTF	[ASCIZ/IS THERE DATA ON THE MEDIA THAT MUST BE SAVED /]
+	GO	QSTN		;Ask the question
+	JRST	.-1		;Timeout or error
+	JRST	GS7A		;Answer is no
+GS7S:	TLO	DSW,(1B10)	;Answer is yes. flag it.
+	TEXTF	[ASCIZ/YOU HAVE 2 OPTIONS
+/]
+GSTT:	TEXTF	[ASCIZ/ENTER:(1,2 OR HELP) - /]
+	TTSIXB			;Input in sixbit
+	JRST	GSTT		;Timeout or error
+	CAMN	0,[SIXBIT/H/]	;Want help ?
+	JRST	.+3		;Yes
+	CAME	0,[SIXBIT /HELP/]
+	JRST	.+3		;No help ..
+	TEXTF	OPTH		;Wants help. prin it.
+	JRST	GSTT		;Ask again.
+	CAME	0,[SIXBIT /2/]	;A 2 ?
+	JRST	.+3		;Nope.
+	TLO	DSW,(1B11!1B12) ;A 2. set both status bits
+	JRST	GS8		;Then continue
+	CAME	0,[SIXBIT /1/]	;A 1 ?
+	JRST	GSTT		;No. ask again
+	TLO	DSW,(1B12)	;Yes. set only one bit in status word
+	JRST	GS8		;Continue
+
+;Last chance to change mind. ask if he's sure there's no data to be
+;Preserved. give chance to change mind. he's already said once that
+;There's nothing on the media worth preserving. we only give another
+;Chance if a home block is there .....otherwise, take his word for it.
+
+GS7A:	TLNE	DSW,(1B14)	;Is there a home block ??
+	JRST	GS8		;No. then don't bother asking
+	TEXTF	[ASCIZ/ARE YOU SURE /] ;Last chance message
+	GO	QSTN		;Ask the question
+	JRST	GS7		;Timeout..another chance
+	JRST	GS7		;Answer no ...another chance
+GS8:	JRST	DXCFGS		;Get next drive
+
+GS8A:	TLO	DSW,(1B10!1B12)	;All writes to maint cyl
+	JRST	DXCFGS		;Get next drive
+
+;Here to mark this spindle not useable.
+;We set rhtbl(9)=1 and put it back
+
+GS9:	LDB	1,[POINT 8,DSW,7] ;Get table offset from dsw
+	MOVE	0,RHTBL(1)	;Get rhtbl entry
+	TLO	0,(1B9)		;Mark as not useable
+	MOVEM	0,RHTBL(1)	;Put rhtbl entry back
+	JRST	DXCFGS		;Get next drive
+
+;Time to restore things and exit
+
+DXCFGX:	GET	3		;Restore ac's
+	GET	2
+	GET	1
+	GET	0
+	GET 	USEPI		;Restore pi use flag
+	RTN			;Exit
+
+
+	XLIST
+	BOX <MCLOAD - ROUTINE TO LOAD AND START THE DX20 MICROCODE>,<
+	THIS ROUTINE SETS UP THE CORRECT MICROCODE VERSION PARAMETERS
+	AND THEN CALLS "LDUP" TO ACTUALLY LOAD THE MICROPROCESSOR.
+
+	AFTER THE LOAD IT SETS UP ANOTHER CALL AND FINALLY CALLS "ST"
+	TO START THE MICROCODE...
+
+	THIS ROUTINE DETERMINES WHICH MICROCODE TO LOAD BY LOOKING AT
+	THE CONTENTS OF "X1" WHICH IS THE LOICAL DEVICE TYPE.
+	THIS WILL BE 6 FOR TOPS10 AND 7 FOR TOPS20...
+
+	CALL SEQ:
+	GO	MCLOAD		;Call the routine
+	RTN			;The return >
+
+MCLOAD:	PUT	0		;Save ac0
+	MOVE	0,MCNAM		;Get tops10 ucode name
+	CAIE	X1,6		;Did we choose correctly ?
+	MOVE	0,MCNAM2	;No, get tops20 microcode name
+	MOVEM	0,FILNAM	;Save it
+	MOVEM	0,SUBFIL
+	MOVSI	0,'ADX'		;Extention
+	MOVEM	0,FILEXT	;Save it
+	MOVEM	0,SUBEXT
+	GO	LDUP		;Load the micro-processor
+	FATAL			;Error return ...
+	GO	QSTART		;Go start u-code and idle the dx20
+	GET	0		;Restore ac0
+	RTN			;And exit
+
+MCNAM:	SIXBIT	/DXMCD/		;Tops10 u-code name
+MCNAM2:	SIXBIT	/DXMCE/		;Tops20 u-code name
+
+	XLIST
+	BOX <QSTART - ROUTINE TO START U-COD AND IDLE THE DX20>,<
+	THIS ROUTINE RESETS THE DX20 AND THEN STARTS THE U-CODE.
+	IT THEN IDLES THE DX20 BY WRITING A 10(OCTAL) INTO THE
+	DX20 CONTROL REGISTER. 
+
+	CALL SEQ:
+	GO	QSTART		;Call the routine
+	RTN			;The return >
+
+
+QSTART:	PUT	1		;Save ac1
+	LDREG	3,2		;Reset the dx20
+	MOVEI	1,5		;Get start address
+	MOVEM	1,CADDR		;Address for console pkg
+	GO	ST		;Start u-code
+	GO	.IDLE		;Idle the dx20
+	GET	1		;Restore ac1
+	RTN
+
+
+	XLIST
+	BOX <GETVER - READS THE DX20 MICROCODE VERSION INTO AC1>,<
+	
+	CALL SEQ:
+	GO	GETVER		;The call
+	RTN			;Version is in ac1 >
+
+GETVER:	PUT	0		;Save ac's	
+	GO	.REQ		;Request device
+	GO	SP		;Stop uprocessor
+	SETOM	RUNFLG		;No type out
+	MOVEI	1,0		;Get cram address to read
+	MOVEM	1,CADDR		;Store it
+	GO	RCR		;Code to get contents of cram in ac1
+	GO	QSTART		;Restart ucode
+	SETZM	RUNFLG		;Restore flag
+	GO	.REL		;Release device
+	GET	0
+	RTN
+
+	XLIST
+	BOX <MCODEP - PRINT DX20 U-CODE VERSION FROM AC1>,<
+	THIS ROUTINE PRINTS THE CURRENT DX20 MICROCODE VERSION AND EDIT
+	NUMBERS FROM AC1 FOLLOWED BY A CRLF. (PRINTING IS NOT FORCED).
+
+	THE LOW ORDER 16 BITS OF THE AC CONTAIN THE VERSION 
+	AND EDIT NUMBERS.
+
+	THE HIGH ORDER 6 BITS IS THE VERSION AND LOW ORDER 10 BITS 
+	IS THE EDIT LEVEL.
+
+	CALL SEQ:
+	MOVE	1,ARG1		;Get 16 bit microcode identifier
+	GO	MCODEP		;The call
+	RTN			;Returns here >
+
+MCODEP:	PUT	0		;Save the ac
+	TEXT	[ASCIZ/DX20 MICROCODE:  VERSION - /]
+	LDB	0,[POINT 6,1,25] ;Get version
+	GO	POCDEC		;Print it
+	TEXT	[ASCIZ/   EDIT - /]
+	LDB	0,[POINT 10,1,35] ;Get edit level 
+	GO	POCDEC		;Print it
+	PCRL			;Advance to next line
+	GET	0
+	RTN			;Exit
+
+
+
+	XLIST
+	BOX <RDBAT -- READ SPECIFIED BAT BLOCK AND CHECK VALIDITY>,<
+	THE FOLLOWING IS DONE:
+	1. TURN OFF ERROR REPORTS, WE EXPECT ERRORS HERE.
+	2. TURN OFF RETRY. THIS CODE DOES UP TO 10 RE-READS OF ITS OWN.
+	3. BAT BLOCKS ARE CONSIDERED NON-EXISTANT IF AN ERROR
+	   IS NOT RECOVERABLE WITH 10 RE-READS OR IF THE FORMAT
+	   OF THE DATA IN EITHER BAT BLOCK IS INCORRECT
+	4. BIT-13 OF DSW WILL BE SET TO A 1 IF BAT BLOCKS NON-EXISTANT
+
+	NOTE - BOTH HEADERS AND DATA ARE READ INTO CORE 
+
+	CALL SEQ:
+	MOVE	1,ARG1		;Buffer addr
+	MOVE	2,ARG2		;Bat block # (2 or 13)
+	GO	RDBAT		;Call the routine
+	RTN			;+1 Always with dsw(13) adjusted >
+
+RDBAT:	PUT	NORET		;Save the no-retry flag state
+	PUT	NORPT		;Save the no-report flag state
+	PUT	X		;Save general index ac
+	PUT	3		;And other ac's
+	PUT	2
+	PUT	1
+	MOVEI	X,^D10		;Set up the retry count
+RBA:	SETOM	NORET		;Flag says no normal retry
+	SETOM	NORPT		;Flag says no error report
+	SETZM	BSYCNT		;Init to no interrupts outstanding
+
+	GO	.REQ		;Request the device
+	MOVE	1,-1(P)		;Get block # to ac1
+	GO	ADCON		;Convert to a disk address
+	MOVEI	1,71		;Read data command
+	HRLZ	3,CWRWD(X1)	;# Words for 1 sect xfer
+	HRR	3,(P)		;Pick buffer addr from stack
+	GO	XFSTRT		;Start the transfer
+	GO	IOWAIT		;Wait,snapa,getlog,release .....
+
+;Data now in core .. see how we did ..
+
+	MOVE	1,R1D(DSW)	;Get status reg data
+	TRNE	1,1B21		;Composite error ?
+	JRST	RBDCT		;Yes. retryable error
+CHCK:	MOVE	1,CONID(DSW)	;Get coni status
+	TRNN	1,1B22		;Channel error ?
+	JRST	CKFBAT		;No. check for validity
+	JRST	RBDCT		;Yes. this is retryable
+
+;Here's where we check for valid bat block format
+;First word must be sixbit bat
+;2Nd last word must be 606060
+;Last word must have the correct logical block number (2 or 13)
+
+CKFBAT:	MOVE	1,(P)		;Get buffer addr (build pointer
+	GO	BATCHK		;Check for a valid bat block
+	JRST	BBAT		;Bad
+	JRST	GBAT		;Bat block looks ok
+
+;Diddle the local retry counter and loop if possible
+
+RBDCT:	SOJG	X,RBA		;Decrement and loop if x > 0
+	TEXT	HDBAT		;Print bad news message
+	MOVE	RGLIST,[400000,,700700] ;Select regs for printing
+	GO	DUMPS		;Print registers
+	GO	SNSDMP		;Print 'em
+	MOVE	1,CONID(DSW)	;Get the coni data
+	TRNE	1,20000		;Is there a channel error ?
+	GO	LOGPNT		;Yes. print logout data
+
+;Bat block invalid for some reason
+
+BBAT:	TLO	DSW,(1B13)	;Set the bit in the status word
+
+;Common exit code
+
+GBAT:	GET	1		;Restore things
+	GET	2
+	GET	3
+	GET	X
+	GET	NORET
+	GET	NORPT
+	RTN			;And exit
+
+	XLIST
+	BOX <RDHOM -- READ SPECIFIED HOME BLOCK AND CHECK VALIDITY>,<
+	THE FOLLOWING IS DONE:
+	1. TURN OFF ERROR REPORTS, WE EXPECT ERRORS HERE.
+	2. TURN OFF RETRY. THIS CODE DOES UP TO 10 RE-READS OF ITS OWN.
+	3. HOME BLOCKS ARE CONSIDERED NON-EXISTANT IF ANY ERROR IS
+	   NOT RECOVERABLE WITH 10 RE-READS OR IF THE FORMAT OF THE
+	   DATA IN EITHER HOME BLOCK IS BAD.
+	4. BIT-8 OF DSW WILL BE SET TO A 1 IF HOME BLOCKS NON-EXISTANT
+
+	NOTE - BOTH HEADERS AND DATA ARE READ INTO CORE 
+
+	CALL SEQ:
+	MOVE	1,ARG1		;Buffer addr
+	MOVE	2,ARG2		;Home block # (1 or 12 (octal))
+	GO	RDHOM		;Call the routine
+	RTN			;+1 Always with dsw(8) adjusted >
+
+RDHOM:	PUT	NORET		;Save the no-retry flag state
+	PUT	NORPT		;Save the no-report flag state
+	PUT	X		;Save general index ac
+	PUT	3		;And other ac's
+	PUT	2
+	PUT	1
+	MOVEI	X,^D10		;Set up the retry count
+RHM:	SETOM	NORET		;Flag says no normal retry
+	SETOM	NORPT		;Flag says no error report
+	SETZM	BSYCNT		;Init to no interrupts outstanding
+
+	GO	.REQ		;Request the device
+	MOVE	1,-1(P)		;Get the block #
+	GO	ADCON		;Convert to a disk address
+	MOVEI	1,71		;Read data command
+	HRLZ	3,CWRWD(X1)	;# Words for 1 sect xfer
+	HRR	3,(P)		;Pick buffer addr from stack
+	GO	XFSTRT		;Start the xransfer
+	GO	IOWAIT		;Wait,snapa,getlog,release .....
+
+;Data now in core .. see how we did ..
+
+	MOVE	1,R1D(DSW)	;Get status reg data
+	TRNE	1,1B21		;Composite error ?
+	JRST	RR%DCT		;Yes, do a re-read
+
+CH%CK:	MOVE	1,CONID(DSW)	;Get coni status
+	TRNN	1,1B22		;Channel error ?
+	JRST	CKFHOM		;No. check for validity
+	JRST	RR%DCT		;Yes. this is retryable
+
+;Here's where we check for valid home block format
+;First word must be sixbit hom
+;2Nd last word must be 707070
+;Last word must have the correct logical block number
+
+CKFHOM:	MOVE	1,(P)		;Get buffer addr (build pointer)
+	GO	HOMCHK		;Check for valid home block
+	JRST	BHOM		;Bad
+	JRST	GHOM		;Home block looks ok
+
+;Diddle the local retry counter and loop if possible
+
+RR%DCT:	SOJG	X,RHM		;Decrement and loop if x > 0
+	TEXT	HDHOM		;Print bad news message
+	MOVE	RGLIST,[400000,,700700] ;Select regs for printing
+	GO	DUMPS		;Print registers
+	GO	SNSDMP		;Print 'em
+	MOVE	1,CONID(DSW)	;Get the coni data
+	TRNE	1,20000		;Is there a channel error ?
+	GO	LOGPNT		;Yes. print logout data
+
+;Home block invalid for some reason
+
+BHOM:	TLO	DSW,(1B14)	;Set the bit in the status word
+
+;Common exit code
+
+GHOM:	GET	1		;Restore things
+	GET	2
+	GET	3
+	GET	X
+	GET	NORET
+	GET	NORPT
+	RTN			;And exit
+
+HDBAT:	ASCIZ/
+CAN'T READ BAT BLOCK IN 10. TRIES
+/
+
+HDHOM:	ASCIZ/
+CAN'T READ HOME BLOCK IN 10. TRIES
+/
+
+OPTH:	ASCIZ/
+OPTION #1 - READ ANYWHERE ON MEDIA BUT WRITE ONLY TO MAINT AREA
+OPTION #2 - ALL READS AND WRITES ARE DONE  WITHIN MAINT AREA
+/
+
+	XLIST
+	BOX <INCRH - - ROUTINE TO INCREMENT MBCN PROPERLY>,<
+	THIS ROUTINE INCREMENTS MBCN PROPERLY TO GET IT SET FOR THE NEXT
+	CONTROLLER. IT IS NECESSARY BECAUSE OF THE STAGGERED RH DEVICE
+	CODES THAT HAVE BEEN ASSIGNED. >
+INCRH:	ADD	MBCN,[400,,0] ;Does it for rh20's
+	RTN
+
+
+	XLIST
+	BOX <RNGCHK - - ROUTINE TO RANGE TEST RH DEVICE CODES >,<
+	THIS ROUTINE TESTS THE LOW ORDER 9 BITS OF AC0 FOR A VALID RH
+	DEVICE CODE AND BRANCHES ACCORDINGLY. THE NON SKIP RETURN IS 
+	TAKEN EITHER IF THE DEVICE CODE IS ILLEGAL OR, THE SUBROUTINE
+	PACKAGE FLAG "TTNBRF" INDICATES THAT THE USER HAS HIT THE 
+	DELIMITING CHARACTER BEFORE ENTERING THE NUMBER. IN EITHER
+	CASE, AC0 IS RETURNED UNMODIFIED. 
+
+	CALLING SEQUENCE:
+		GO	RNGCHK
+		RTN-1		;Out of range
+		RTN-2		;Ok >
+RNGCHK:	SKIPN	TTNBRF		;Any digits input ?
+	RTN			;No. error
+	TRNE	0,3		;These bits must be zero
+	RTN			;Error. there not
+	CAML	0,LODEV		;Range test
+	CAMLE	0,HIDEV
+	RTN			;Out of range
+	AOS	(P)		;Ok. bump the return
+	RTN			;And exit
+
+LODEV:	540
+HIDEV:	574
+
+
+
+	XLIST
+	BOX	<DEVSEL - SELECT -- DEVICE SELECTION ROUTINES >,<
+	THESE ROUTINES ALLOW FOR THE SELECTION OF THE NEXT AVAILABLE
+	RH/DX/SPINDLE PAIR TO BE TESTED.
+
+	THE ALGORITHIM INCREMENTS THROUGH DEVTBL/RHTBL PICKING THE NEXT 
+	GROUP FOR TEST. THEY ARE SELECTED IN THE ORDER THEY WERE FOUND AT
+	CONFIG TIME. THE SOFTWARE SUPPORTS UP TO 8 RH'S WITH A MAXIMUM OF
+	1 DX20 PER RH AND 16 SPINDLES PER DX20.
+
+	FOR A PAIR TO BE SELECTED BY THIS ROUTINE, WE MERELY HAVE TO HAVE
+	RHTBL(10)=1 SAYING THE SPINDLE WAS SELECTED. THE DECISION OF WHETHER
+	OR NOT THE RH/DX/SPINDLE GROUP IS STILL USEABLE IS MADE AT THE TEST 
+	LEVEL BY STATCK.
+
+	THE ROUTINES AND EXERCISES IN THE PROGRAM ALL CALL SELECT WITH THE
+	EXCEPTION OF TOTALS AND TOTCLR WHICH CALL DEVSEL. THIS GIVES YOU THE
+	ABILITY TO STILL FETCH AND CLEAR TOTALS FOR EACH OF THE ORIGINALLY 
+	SELECTED DRIVES, EVEN IF ALL OF THE ORIGINALLY SELECTED DRIVES BECOME
+	UNUSEABLE FOR SOME REASON.
+
+	CALLING SEQ:
+		GO DEVSEL (OR) SELECT	;Select next dev for test
+		RTN1		;Tried all. first re-selected
+		RTN2		;Next is selected. >
+
+SELECT:	JUMPE	MBCN,.+3	;Jump if rh is not assigned
+	CAMN	MBCN,DIAGCR	;Do we have rh ?
+	GO	.REL		;Yes, release it
+	GO	CHKTBL		;Check for a useable drive
+	JRST	SEL0		;To common code
+
+DEVSEL:	JUMPE	MBCN,.+3	;Jump if rh is not assigned
+	CAMN	MBCN,DIAGCR	;Do we have rh ?
+	GO	.REL		;Yes release it
+
+SEL0:	PUT	1		;Save ac's
+	PUT	2
+	SKIPN	SELFLG		;Initializing ?
+	JRST	SEL1		;No.
+	SETZM	SELFLG		;Yes. clear the flag
+	MOVE	1,TBWD		;-Cnt,,0
+	SUBI	1,1		;Adjustment for initializing
+	MOVEM	1,TBNDX		;Always holds current table index
+
+SEL1:	MOVE	1,TBNDX		;Get current table index
+	AOBJP	1,SELX		;Bump and jump if done
+
+;Process entry pointed to pointed to by tbndx (now in ac1)
+
+SEL2:	MOVEM	1,TBNDX		;Save current index
+	MOVE	2,RHTBL(1)	;Get rhtbl entry
+	TLNN	2,(1B10)	;Spindle selected ?
+	JRST	SEL1		;No ... try for another
+	AOS	-2(P)		;Yes. adjust for skip return
+	MOVE	DSW,DEVTBL(1)	;Set up dsw for dswbrk routine
+	GO	DSWBRK		;Ok. set up drive, mbcn and, x1
+SELX:	GET	2		;Restore
+	GET	1
+	RTN			;And exit
+
+;A cell that always points (in a sense) to the currently selected
+;Rhtbl entry   -cnt,,offset  of current table entry
+
+TBNDX:	Z			;Used by select, devsel, dxsel
+
+	XLIST
+	BOX <DXSEL -- SELECTION ROTUTINE USED WITHIN THE CONFIGURATOR>,<
+	THIS ROUTINE IS USED BY RP2TST TO POLL FOR SPINDLES ON AN RH/DX
+	PAIR. THIS ROUTINE SELECTS THE NEXT RH/DX PAIR (DIFFERENT FROM
+	THE CURRENT ONE). THIS MEANS WE PASS OVER THE CONFIGURATION 
+	TABLES IN JUMPS (OR GROUPS) OF HOWEVER MANY SLOTS ARE ASSIGNED
+	TO AN RH/DX PAIR IN THE CONFIG TABLES.
+
+	WE PICK RH/DX PAIR IFF: RHTBL(14,17)=1 AND RHTBL(12,15)=0
+	WHICH MEANS RH/DX PAIR IS THERE AND NOT BROKEN ....
+
+	YOU CAN SET SELFLG TO -1 TO START FROM BEGINNING AND LEAVE 
+	ALONE TO PROCEED THROUGH THE REST OF THE TABLE ....
+	CALLING SEQ:
+	GO	DXSEL		;Select next rh/dx pair
+	RTN1			;Tried all
+	RTN2			;Next is selected. >
+
+DXSEL:	PUT	1		;Save ac's
+	PUT	2
+	SKIPN	SELFLG		;Initializing ?
+	JRST	DSEL1		;No.
+	SETZM	SELFLG		;Yes. clear the flag
+
+;Initialize our pointer to point one group of slots in front of
+;The table so first adjustment takes us to start of the table
+
+	MOVE	1,TBWD		;-Cnt,,0
+	SUB	1,[DRMX,,DRMX]	;Adjustment for initializing
+	MOVEM	1,TBNDX		;Always holds current table index
+
+DSEL1:	MOVE	1,TBNDX		;Get current table index
+	ADD	1,[DRMX,,DRMX]	;Bump both halves to next slot
+	JUMPGE	1,DSELX		;Get out when left side goes positive
+
+;Process entry pointed to pointed to by tbndx (now in ac1)
+
+DSEL2:	MOVEM	1,TBNDX		;Save current index
+	MOVE	2,RHTBL(1)	;Get rhtbl entry
+	TLC	2,(1B14!1B17)	;Complement expected 1's bits
+	TLNE	2,(1B12!1B14!1B15!1B17) ;Test.  status correct ?
+	JRST	DSEL1		;No. adjust pointer for next rh/dx slot
+	AOS	-2(P)		;Yes. adjust for skip return
+	MOVE	DSW,DEVTBL(1)	;Det up dsw for dswbrk routine
+	GO	DSWBRK		;Ok. set up drive, mbcn and, x1
+DSELX:	GET	2		;Restore
+	GET	1
+	RTN			;And exit
+
+
+	XLIST
+	BOX <DSWBRK - BUILD DSW, MBCN, DRIVE, X1 FROM AN RHTBL/DEVTBL ENTRY>,<
+	THIS ROUTINE EXPECTS TO FIND DSW SET UP WITH AN ENTRY FROM DEVTBL,
+	IT WILL INTERN SET UP MBCN, DRIVE, X1 IN THE PROPER FORMATS FOR THE 
+	REST OF THE PROGRAM.
+
+	FORMATS:  
+	--------
+
+	DSW	CONTAINS AN IMAGE OF A PARTICULAR DEVTBL ENTRY FOR AN 
+		RH/DX/SPINDLE GROUP. THE LEFT HALF IS FLAGS AND STATUS
+		AND THE RIGHT HALF IS A POINTER TO THE SPINDLES DSB AREA.
+
+	MBCN	CONTAINS THE MASSBUSS CONTROLLER DEVICE CODE IN BITS 3-9
+
+	DRIVE	CONTAINS THE SPINDLE (SUBUNIT) NUMBER IN THE LEFT SIDE AND
+		THE DX20 MASSBUSS DRIVE NUMBER IN THE RIGHT SIDE.
+
+	X1	WILL CONTAIN EITHER A 6 OR 7 FOR THIS PROGRAM. THIS IS THE
+		LOGICAL DEVICE TYPE AND IS USED FOR INDEXING INTO ALL OF THE
+		VARIOUS PARAMETER TABLES IN THE PROGRAM. MOST OF THE TABLES
+		ARE IN THE 'DISKS' MODULE.
+
+	CALLING	SEQ:
+
+	MOVE	DSW,ARG		;Get a devtbl entry to dsw
+	GO	DSWBRK		;Call the routine
+	RTN			;Returns here always >
+
+DSWBRK:	PUT	0		;Save ac's
+	PUT	1
+	LDB	1,[POINT 8,DSW,7]	;Get index from dsw
+
+;Set up x1 with logical device type
+
+	LDB	X1,[POINT 4,RHTBL(1),21] ;Get from rhtbl(18-21)
+
+;Set up drive with subunit # in left and dx20 # in right half
+
+	LDB	DRIVE,[POINT 3,RHTBL(1),5] ;Dx# from rhtbl(3-5)
+	LDB	0,[POINT 8,RHTBL(1),35]    ;Subunit from rhtbl(28-35)
+	HRL	DRIVE,0		;Drive/ subunit#,,dx20#
+
+;Build mbcn from the channel #
+
+	LDB	MBCN,[POINT 3,RHTBL(1),2] ;Chan # from rhtbl(0-2)
+	ROT	MBCN,^D-10	;Shift into position
+	ADD	MBCN,[54000,,0] ;Now have an rh device code
+
+	GET	1		;Restore ac's
+	GET	0
+	RTN			;Exit
+
+
+	XLIST
+	BOX <CHKTBL -- CHECKS CONFIG TABLE FOR AT LEAST 1 TESTABLE DRIVE>,<
+	THIS ROUTINE SCANS THE CONFIG TABLES LOOKING FOR AT LEAST 1 RH/DX/DR
+	COMBINATION THAT IS STILL USEABLE. THIS IS SO THE SECLECTION ROUTINE
+	WON'T GET STUCK IN A LOOP LOOKING FOR A USEABLE DRIVE. IF NO USEABLE
+	DEVICES ARE THERE, THE PROGRAM WILL GIVE THE APPROPRIATE MESSAGE AND
+	WILL BE RESTARTED FROM "STARTQ" (QUICK START).
+
+	CALL SEQ:
+	GO	CHKTBL		;The call
+	RTN			;+1 If a useable drive still exists
+
+	FOR A USEABLE DRIVE TO EXIST, WE MUST HAVE:
+		RHTBL (8,10,11,13,14,16,17) = 1
+		RHTBL (9,12,15) = 0    AND   DEVTBL (15) = 1  >
+
+CHKTBL:	PUT	0		;Save ac's
+	PUT	1
+	PUT	2
+	MOVE	2,TBWD		;-Cnt,,0
+CHKTB1:	MOVE	0,RHTBL(2)	;Get rhtbl entry 
+	MOVE	1,DEVTBL(2)	;Get devtbl entry
+	TLC	0,(1B8!1B10!1B11!1B13!1B14!1B16!1B17) ;Prepare for test
+	TLNN	0,(1B8!1B9!1B10!1B11!1B12!1B13!1B14!1B15!1B16!1B17) ;Check
+	TLNN	1,(1B15)	;The final test
+	SKIPA			;Error
+	JRST	CKTBX		;Good entry. exit
+
+	AOBJN	2,CHKTB1	;Bump pointer. loop till done
+	TEXTF	[ASCIZ/
+
+*****************************
+NO DEVICES AVAILABLE FOR TEST
+*****************************
+
+/]
+	JRST	STARTQ		;And restart program
+
+CKTBX:	GET	2		;Restore ac's
+	GET	1
+	GET	0
+	RTN			;Exit
+
+
+	XLIST
+	BOX <CKTBDX -- CHECKS CONFIG TABLE FOR AT LEAST 1 TESTABLE RH/DX>,<
+	THIS ROUTINE SCANS THE CONFIG TABLES LOOKING FOR AT LEAST 1 RH/DX
+	COMBINATION THAT IS STILL USEABLE. THIS IS SO THE CONFIGURATOR ROUTINE
+	WON'T GET STUCK IN A LOOP LOOKING FOR A USEABLE RH/DX. IF NO USEABLE
+	DEVICES ARE THERE, THE PROGRAM WILL GIVE THE APPROPRIATE MESSAGE AND
+	WILL BE RESTARTED FROM "STARTQ" (QUICK START).
+
+	CALL SEQ:
+	GO	CKTBDX		;The call
+	RTN			;+1 If a useable drive still exists
+
+	FOR A USEABLE RH/DX TO EXIST, WE MUST HAVE:
+		RHTBL (14,17) = 1
+		RHTBL (12,15) = 0   >
+
+CKTBDX:	PUT	0		;Save ac's
+	PUT	1
+	PUT	2
+	MOVE	2,TBWD		;-Cnt,,0
+CHKDX1:	MOVE	0,RHTBL(2)	;Get rhtbl entry 
+	MOVE	1,DEVTBL(2)	;Get devtbl entry
+	TLC	0,(1B14!1B17) 	;Prepare for test
+	TLNE	0,(1B12!1B14!1B15!1B17) ;Check
+	SKIPA			;Error
+	JRST	CKTDXX		;Good entry. exit
+
+	AOBJN	2,CHKDX1	;Bump pointer. loop till done
+	TEXTF	[ASCIZ?
+
+*******************************
+NO RH/DX20'S AVAILABLE FOR TEST
+*******************************
+
+?]
+	JRST	STARTQ		;And restart program
+
+CKTDXX:	GET	2		;Restore ac's
+	GET	1
+	GET	0
+	RTN			;Exit
+
+
+	XLIST
+	BOX <CKTBSP -- CHECKS CONFIG TABLE FOR AT LEAST 1 TESTABLE SPINDLE>,<
+	THIS SCANS THE CONFIG TABLES LOOKING FOR AT LEAST 1 RH/DX/SPINDLE
+	COMBINATION THAT IS STILL USEABLE. IF NO USEABLE DEVICES ARE THERE,
+	THE PROGRAM WILL GIVE THE APPROPRIATE MESSAGE AND WILL BE RESTARTED
+	FROM "STARTQ" (QUICK START).
+
+	CALL SEQ:
+	GO	CKTBSP		;The call
+	RTN			;+1 If a useable drive still exists
+
+	FOR A USEABLE RH/DX/SPINDLE TO EXIST, WE MUST HAVE:
+		RHTBL (11,14,17) = 1
+		RHTBL (9,12,15) = 0   >
+
+CKTBSP:	PUT	0		;Save ac's
+	PUT	1
+	PUT	2
+	MOVE	2,TBWD		;-Cnt,,0
+CHKSP1:	MOVE	0,RHTBL(2)	;Get rhtbl entry 
+	MOVE	1,DEVTBL(2)	;Get devtbl entry
+	TLC	0,(1B11!1B14!1B17) ;Prepare for test
+	TLNE	0,(1B9!1B11!1B12!1B14!1B15!1B17) ;Check
+	SKIPA			;Error
+	JRST	CKTSPX		;Good entry. exit
+
+	AOBJN	2,CHKSP1	;Bump pointer. loop till done
+	TEXTF	[ASCIZ?
+
+************************************
+NO RH/DX/SPINDLES AVAILABLE FOR TEST
+************************************
+
+?]
+	JRST	STARTQ		;And restart program
+
+CKTSPX:	GET	2		;Restore ac's
+	GET	1
+	GET	0
+	RTN			;Exit
+
+	END
+   

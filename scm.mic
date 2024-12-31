@@ -1,0 +1,17 @@
+@del *.scm
+@FILCOM
+*dsk:=DFRPMT.mac,ldfrpm:
+*dsk:=RH20.DEF,ldfrpm:
+*dsk:=END.mac,ldfrpm:
+*dsk:=DFRPM.mac,ldfrpm:
+*dsk:=DFRPM1.mac,ldfrpm:
+*dsk:=DFRPM2.mac,ldfrpm:
+*dsk:=DEFECT.mac,ldfrpm:
+*dsk:=CONFIG.mac,ldfrpm:
+*dsk:=GENVAR.mac,ldfrpm:
+*dsk:=DISKS.mac,ldfrpm:
+*dsk:=MAPSUP.mac,ldfrpm:
+*dsk:=UTIL1.mac,ldfrpm:
+*dsk:=RH20.mac,ldfrpm:
+*dsk:=GENRGS.mac,ldfrpm:
+@

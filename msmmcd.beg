@@ -1,0 +1,495 @@
+%TITLE 'STIRS FAULT ISOLATION DATA FOR M8618 (MMC) BOARD'
+
+MODULE MSMMCD	(
+		LANGUAGE(BLISS36)
+		) =
+
+BEGIN
+
+!
+!			  COPYRIGHT (C) 1979 BY
+!	      DIGITAL EQUIPMENT CORPORATION, MAYNARD, MASS.
+!
+! THIS SOFTWARE IS FURNISHED UNDER A LICENSE AND MAY BE USED AND  COPIED
+! ONLY  IN  ACCORDANCE  WITH  THE  TERMS  OF  SUCH  LICENSE AND WITH THE
+! INCLUSION OF THE ABOVE COPYRIGHT NOTICE.  THIS SOFTWARE OR  ANY  OTHER
+! COPIES  THEREOF MAY NOT BE PROVIDED OR OTHERWISE MADE AVAILABLE TO ANY
+! OTHER PERSON.  NO TITLE TO AND OWNERSHIP OF  THE  SOFTWARE  IS  HEREBY
+! TRANSFERRED.
+!
+! THE INFORMATION IN THIS SOFTWARE IS SUBJECT TO CHANGE  WITHOUT  NOTICE
+! AND  SHOULD  NOT  BE  CONSTRUED  AS  A COMMITMENT BY DIGITAL EQUIPMENT
+! CORPORATION.
+!
+! DIGITAL ASSUMES NO RESPONSIBILITY FOR THE USE OR  RELIABILITY  OF  ITS
+! SOFTWARE ON EQUIPMENT WHICH IS NOT SUPPLIED BY DIGITAL.
+!
+
+!++
+! FACILITY:	DECSYSTEM 2020 DIAGNOSTIC RELEASE TAPE 'DSTIR'
+!
+! ABSTRACT:
+!
+!	THIS MODULE CONTAINS THE FAULT ISOLATION DATA FOR THE KS10
+!	STIMULUS/RESPONSE (STIRS) DIAGNOSTIC FOR THE M8618 (MMC) BOARD.
+!	IT IS LINKED TO THE 'MSSTRC' AND 'MSMMCT' MODULES TO PRODUCE
+!	THE 'MSMMC.EXE' FILE.
+!
+! ENVIRONMENT: 	RUNS UNDER 'CSL' ON A TOPS-20 SYSTEM.
+!
+! AUTHOR: Richard Stockdale	, CREATION DATE: 23-MAY-79
+!
+! MODIFIED BY:
+!
+!	Richard Stockdale, 23-MAY-79; VERSION 0.1
+!--
+
+!			Program Description
+!			-------------------
+!
+!
+!   Fault  isolation is done down to a network level which may be as small
+! as a single chip or as large as 30 chips (generally 2-4).  
+!
+!   This module  contains the declarations needed for the fault isolation.
+! Each individual test has a set of error messages in it.  Associated with
+! each error message is a '!]ERROR text NTWK' and a '!]NO ERROR text NTWK'
+! which describe which network is possibly in  error or not in error.  The
+! 'text' consists of a series of network specifications  or  network macro
+! specifications.  The basic  network  is of the form 'letter number' such
+! as A1,B1,B2,B3....  A macro generally consists of 'letter_letter number'
+! such as A_F1 which means A1 B1 C1...F1.  The element NTWK is used to end
+! the description  for  the  particular  ERROR or NO ERROR - it is a macro
+! which concatenates all of the network specifications together.
+!
+!   For the MMC board the networks  are  assigned arbitrarily by the print
+! number.  A1,B1..K1 are the networks A..K for print 1.  Each  network  is
+! assigned a particular  bit  position  in  an error vector.  Whenever the
+! error handling  routines are called to report/handle an error the series
+! of network  specifications  in  the  form of a 5 word bitvector is anded 
+! with the error vector (initially all ones (every network may be faulty))
+! and the error vector gradually narrows down on the actual faulty network.
+!
+!   When STIRS has run all of the tests  and  has  narrowed  the number of
+! possible faulty networks to a final result, STIRS  prints  out a list of
+! the possible faulty networks.  It translates  each bit position (ie. A1,
+! B1,...) to a description which  the  person  using STIRS can then use to
+! look at the prints and see where the problem may be.
+!
+!   This module contains the following:  
+!	Network descriptions for each network
+!	Network definition - bit postion in the error vector
+!	Network macro definitions
+!
+!   The control file MSMMC.CTL uses this partial module to generate a
+! complete module containing all of the fault isolation  descriptions
+! taken from the error messages in each test.
+
+
+GLOBAL LITERAL
+	DATA_VERSION = 1,
+	DATA_EDIT = 0,
+	MAXNETS = 135;
+
+MACRO
+	UPAZ(TEXT) = UPLIT(%ASCIZ TEXT) %,
+	NTWK = W_0,W_1,W_2,W_3,W_4
+		%ASSIGN (W_0,0)
+		%ASSIGN (W_1,0)
+		%ASSIGN (W_2,0)
+		%ASSIGN (W_3,0)%;
+
+BIND
+	XCVR = UPAZ('MMC1: 8646 BUS TRANSCEIVER'),
+	BUS_ADD_REG = UPAZ('MMC3: BUS ADDRESS REGISTER'),
+	CHECK_BITS = UPAZ('MMC4: CHECK BITS "MMC4 CP..C1"'),
+	MOS_DATA = UPAZ('MMC6: "MOS DATA"'),
+	XMIT = UPAZ('MMC7: 4X2 MIXER "MMC7 XMITINF"'),
+	ERR_ADR_REG = UPAZ('MMC8: ERROR ADDRESS REGISTER BITS 14..21');
+
+GLOBAL BIND
+    NET_NAMES = UPLIT(
+	XCVR,					!BITS 00-03	! A1
+	XCVR,					!BITS 04-07	! B1
+	XCVR,					!BITS 08-11	! C1
+	XCVR,					!BITS 12-15	! D1
+	XCVR,					!BITS 16-17	! E1
+	XCVR,					!BITS 18-21	! F1
+	XCVR,					!BITS 22-25	! G1
+	XCVR,					!BITS 26-29	! H1
+	XCVR,					!BITS 30-33	! I1
+	XCVR,					!BITS 34-35	! J1
+	UPAZ('MMC1: INVERTERS "MMC1 LINF 00..35 L"'),		! K1
+	UPAZ('MMC1: PARITY GENERATOR "MMC1 TRANS PARITY LEFT"'), ! L1
+	UPAZ('MMC1: PARITY GENERATOR "MMC1 TRANS PARITY RIGHT"'), ! M1
+	UPAZ('MMC1: PARITY GENERATOR "MMC1 PARITY BAD"'),	! N1
+	UPAZ('  '),						!
+	UPAZ('MMC2: ECC CODE DECODER - CODE 11..16'),		! A2
+	UPAZ('MMC2: ECC CODE DECODER - CODE 21..26'),		! B2
+	UPAZ('MMC2: ECC CODE DECODER - CODE 31..36'),		! C2
+	UPAZ('MMC2: ECC CODE DECODER - CODE 41..46'),		! D2
+	UPAZ('MMC2: ECC CODE DECODER - CODE 51..56'),		! E2
+	UPAZ('MMC2: ECC CODE DECODER - CODE 61..66'),		! F2
+	UPAZ('MMC2: ECC CODE DECODER - CODE 1X..6X'),		! G2
+	UPAZ('MMC2: XOR GATES "MMC2 CORRECT DATA 00..05"'),	! H2
+	UPAZ('MMC2: XOR GATES "MMC2 CORRECT DATA 06..11"'),	! I2
+	UPAZ('MMC2: XOR GATES "MMC2 CORRECT DATA 12..17"'),	! J2
+	UPAZ('MMC2: XOR GATES "MMC2 CORRECT DATA 18..23"'),	! K2
+	UPAZ('MMC2: XOR GATES "MMC2 CORRECT DATA 24..29"'),	! L2
+	UPAZ('MMC2: XOR GATES "MMC2 CORRECT DATA 30..35"'),	! M2
+	UPAZ('  '),						!
+	UPAZ('  '),						!
+	UPAZ('  '),						!
+	UPAZ('  '),						!
+	UPAZ('  '),						!
+	UPAZ('  '),						!
+	UPAZ('  '),						!
+	UPAZ('  '),						!
+	UPAZ('MMC3: 2X4 MIX "MMC3 ROW 22 COL 29" (ADDR SELECT)'),	! A3
+	UPAZ('MMC3: 2X4 MIX "MMC3 ROW 23/24 COL 30/31" (ADDR SELECT)'),	! B3
+	UPAZ('MMC3: 2X4 MIX "MMC3 ROW 25/26 COL 32/33" (ADDR SELECT)'),	! C3
+	UPAZ('MMC3: 2X4 MIX "MMC3 ROW 27/28 COL 34/35" (ADDR SELECT)'),	! D3
+	UPAZ('MMC3: "MMC3 STATUS LOAD EN"'),			! E3
+	UPAZ('MMC3: "MMC3 STATUS IO WRITE" LOGIC'),		! F3
+	UPAZ('MMC3: FORCE CHECK BITS REGISTER'),		! G3
+	UPAZ('MMC3: "MMC3 ECC ON"'),				! H3
+	UPAZ('MMC3: "MMC3 WRITE"'),				! I3
+	BUS_ADD_REG,						! J3
+	BUS_ADD_REG,						! K3
+	BUS_ADD_REG,						! L3
+	BUS_ADD_REG,						! M3
+	UPAZ('MMC3: "MMC3 LOAD ADD EN"'),			! N3
+	UPAZ('MMC3: "MMC3 READ"'),				! O3
+	UPAZ('  '),						!
+	CHECK_BITS,				!BIT CP		! A4
+	CHECK_BITS,				!BIT C40	! B4
+	CHECK_BITS,				!BIT C20	! C4
+	CHECK_BITS,				!BIT C10	! D4
+	CHECK_BITS,				!BIT C4		! E4
+	CHECK_BITS,				!BIT C2		! F4
+	CHECK_BITS,				!BIT C1		! G4
+	UPAZ('MMC4: FORCE BITS/ECC BITS 4X2 MIXERS "CHECK BIT CP..C1"'), ! H4
+	UPAZ('MMC4: ERROR CHECK BITS REGISTER'),		! I4
+	UPAZ('MMC4: "MMC4 UNCOR ERR HOLD"'),			! J4
+	UPAZ('MMC4: CHECK BITS C40,C4 COMMON PARITY GENERATOR'), ! K4
+	UPAZ('MMC4: CHECK BITS C20,C2 COMMON PARITY GENERATOR'), ! L4
+	UPAZ('MMC4: CHECK BITS C10,C1 COMMON PARITY GENERATOR'), ! M4
+	UPAZ('  '),						!
+	UPAZ('  '),						!
+	UPAZ('  '),						!
+	UPAZ('  '),						!
+	UPAZ('  '),						!
+	UPAZ('  '),						!
+	UPAZ('  '),						!
+	UPAZ('MMC5: "MMC5 POWER FAILED" LOGIC'),		! A5
+	UPAZ('MMC5: "MMC5 ERR LOAD"'),				! B5
+	UPAZ('MMC5: "MMC5 ERR HOLD" LOGIC'),			! C5
+	UPAZ('MMC5: "MMC5 GOOD DATA EN"'),			! D5
+	UPAZ('MMC5: "MMC5 READ ERROR"'),			! E5
+	UPAZ('MMC5: "MMC5 CORRECT EN" LOGIC'),			! F5
+	UPAZ('MMC5: "MMC5 UNCORRECTABLE ERR" LOGIC'),		! G5
+	UPAZ('MMC5: PARITY GEN FOR "CORRECT EN" & "UNCORRECTABLE ERR"'), ! H5
+	UPAZ('MMC5: "MMC5 ERR ADD LOAD"'),			! I5
+	UPAZ('  '),						!
+	MOS_DATA,			!BITS 00-05		! A6
+	MOS_DATA,			!BITS 06-11		! B6
+	MOS_DATA,			!BITS 12-17		! C6
+	MOS_DATA,			!BITS 18-23		! D6
+	MOS_DATA,			!BITS 24-29		! E6
+	MOS_DATA,			!BITS 30-35		! F6
+	MOS_DATA,			!BITS 36-41		! G6
+	MOS_DATA,			!BITS 42		! H6
+	UPAZ('  '),						!
+	UPAZ('MMC7: "MMC7 STATUS OR DATA" LOGIC'),		! A7
+	UPAZ('MMC7: "MMC7 MEM PARITY ERR" LOGIC'),		! B7
+	XMIT,				!BITS 00..03		! C7
+	XMIT,				!BITS 04..07		! D7
+	XMIT,				!BITS 08..11		! E7
+	XMIT,				!BITS 12..15		! F7
+	XMIT,				!BITS 16..19		! G7
+	XMIT,				!BITS 20..23		! H7
+	XMIT,				!BITS 24..27		! I7
+	XMIT,				!BITS 28..31		! J7
+	XMIT,				!BITS 32..35		! K7
+	UPAZ('MMC7: "MMC7 READ STATUS" LOGIC'),			! L7
+	UPAZ('  '),						!
+	UPAZ('  '),						!
+	UPAZ('  '),						!
+	UPAZ('  '),						!
+	UPAZ('  '),						!
+	UPAZ('MMC8: "MMC8 ADDRESS MATCH" LOGIC'),		! A8
+	UPAZ('MMC8: "MMC8 WD 0 EN" LOGIC'),			! B8
+	UPAZ('MMC8: "MMC8 WD 1 EN" LOGIC'),			! C8
+	UPAZ('MMC8: "MMC8 WD 2 EN" LOGIC'),			! D8
+	UPAZ('MMC8: "MMC8 WD 3 EN" LOGIC'),			! E8
+	UPAZ('MMC8: "MMC8 BOARD SEL 4" LOGIC'),			! F8
+	UPAZ('MMC8: "MMC8 BOARD SEL 2" LOGIC'),			! G8
+	UPAZ('MMC8: "MMC8 BOARD SEL 1" LOGIC'),			! H8
+	ERR_ADR_REG,		!BITS 14..21			! I8
+	ERR_ADR_REG,		!BITS 22..29			! J8
+	ERR_ADR_REG,		!BITS 30..35			! K8
+	UPAZ('  '),						!
+	UPAZ('MMC9: "MMC9 REFRESH REQ" LOGIC'),			! A9
+	UPAZ('MMC9: "MMC9 REF ERR" LOGIC'),			! B9
+	UPAZ('MMC9: BINARY COUNTERS FOR REFRESH LOGIC'),	! C9
+	UPAZ('  '),						!
+	UPAZ('MMCA: CYCLE CONTROL LOGIC'),			! AA
+	UPAZ('MMCA: 8646 TRANSCEIVER'),				! BA
+	UPAZ('  '),						!
+	UPAZ('MMCB:  WRITE CONTROL LOGIC'),			! AB
+	UPAZ('MMCB: REFRESH CONTROL LOGIC'),			! BB
+	UPAZ('MMCB: RESET CONTROL LOGIC'),			! CB
+	UPAZ('MMCB: 8646 TRANSCEIVER'),				! DB
+	UPAZ('  '),						!
+	UPAZ('MMCC: "MMCC T CLKS"'),				! AC
+	UPAZ('MMCC: "MMCC UNLATCH H"'),				! JC
+	UPAZ('MMCC: "MMCC R CLKS"'));				! NC
+
+COMPILETIME
+	W_0 = 0,
+	W_1 = 0,
+	W_2 = 0,
+	W_3 = 0,
+	W_4 = 0;
+
+LITERAL
+	A_1 = 1^0,
+	B_1 = 1^1,
+	C_1 = 1^2,
+	D_1 = 1^3,
+	E_1 = 1^4,
+	F_1 = 1^5,
+	G_1 = 1^6,
+	H_1 = 1^7,
+	I_1 = 1^8,
+	J_1 = 1^9,
+	K_1 = 1^10,
+	L_1 = 1^11,
+	M_1 = 1^12,
+	N_1 = 1^13,
+	A_2 = 1^15,
+	B_2 = 1^16,
+	C_2 = 1^17,
+	D_2 = 1^18,
+	E_2 = 1^19,
+	F_2 = 1^20,
+	G_2 = 1^21,
+	H_2 = 1^22,
+	I_2 = 1^23,
+	J_2 = 1^24,
+	K_2 = 1^25,
+	L_2 = 1^26,
+	M_2 = 1^27,
+	A_3 = 1^0,
+	B_3 = 1^1,
+	C_3 = 1^2,
+	D_3 = 1^3,
+	E_3 = 1^4,
+	F_3 = 1^5,
+	G_3 = 1^6,
+	H_3 = 1^7,
+	I_3 = 1^8,
+	J_3 = 1^9,
+	K_3 = 1^10,
+	L_3 = 1^11,
+	M_3 = 1^12,
+	N_3 = 1^13,
+	O_3 = 1^14,
+	A_4 = 1^16,
+	B_4 = 1^17,
+	C_4 = 1^18,
+	D_4 = 1^19,
+	E_4 = 1^20,
+	F_4 = 1^21,
+	G_4 = 1^22,
+	H_4 = 1^23,
+	I_4 = 1^24,
+	J_4 = 1^25,
+	K_4 = 1^26,
+	L_4 = 1^27,
+	M_4 = 1^28,
+	A_5 = 1^0,
+	B_5 = 1^1,
+	C_5 = 1^2,
+	D_5 = 1^3,
+	E_5 = 1^4,
+	F_5 = 1^5,
+	G_5 = 1^6,
+	H_5 = 1^7,
+	I_5 = 1^8,
+	A_6 = 1^10,
+	B_6 = 1^11,
+	C_6 = 1^12,
+	D_6 = 1^13,
+	E_6 = 1^14,
+	F_6 = 1^15,
+	G_6 = 1^16,
+	H_6 = 1^17,
+	A_7 = 1^18,
+	B_7 = 1^19,
+	C_7 = 1^20,
+	D_7 = 1^21,
+	E_7 = 1^22,
+	F_7 = 1^23,
+	G_7 = 1^24,
+	H_7 = 1^25,
+	I_7 = 1^26,
+	J_7 = 1^27,
+	K_7 = 1^28,
+	L_7 = 1^29,
+	A_8 = 1^0,
+	B_8 = 1^1,
+	C_8 = 1^2,
+	D_8 = 1^3,
+	E_8 = 1^4,
+	F_8 = 1^5,
+	G_8 = 1^6,
+	H_8 = 1^7,
+	I_8 = 1^8,
+	J_8 = 1^9,
+	K_8 = 1^10,
+	A_9 = 1^12,
+	B_9 = 1^13,
+	C_9 = 1^14,
+	A_A = 1^16,
+	B_A = 1^17,
+	A_B = 1^19,
+	B_B = 1^20,
+	C_B = 1^21,
+	D_B = 1^22,
+	A_C = 1^24,
+	B_C = 1^25,
+	C_C = 1^26;
+
+MACRO
+	A1 = %ASSIGN(W_0,W_0 OR A_1)%,
+	B1 = %ASSIGN(W_0,W_0 OR B_1)%,
+	C1 = %ASSIGN(W_0,W_0 OR C_1)%,
+	D1 = %ASSIGN(W_0,W_0 OR D_1)%,
+	E1 = %ASSIGN(W_0,W_0 OR E_1)%,
+	F1 = %ASSIGN(W_0,W_0 OR F_1)%,
+	G1 = %ASSIGN(W_0,W_0 OR G_1)%,
+	H1 = %ASSIGN(W_0,W_0 OR H_1)%,
+	I1 = %ASSIGN(W_0,W_0 OR I_1)%,
+	J1 = %ASSIGN(W_0,W_0 OR J_1)%,
+	K1 = %ASSIGN(W_0,W_0 OR K_1)%,
+	L1 = %ASSIGN(W_0,W_0 OR L_1)%,
+	M1 = %ASSIGN(W_0,W_0 OR M_1)%,
+	N1 = %ASSIGN(W_0,W_0 OR N_1)%,
+	A2 = %ASSIGN(W_0,W_0 OR A_2)%,
+	B2 = %ASSIGN(W_0,W_0 OR B_2)%,
+	C2 = %ASSIGN(W_0,W_0 OR C_2)%,
+	D2 = %ASSIGN(W_0,W_0 OR D_2)%,
+	E2 = %ASSIGN(W_0,W_0 OR E_2)%,
+	F2 = %ASSIGN(W_0,W_0 OR F_2)%,
+	G2 = %ASSIGN(W_0,W_0 OR G_2)%,
+	H2 = %ASSIGN(W_0,W_0 OR H_2)%,
+	I2 = %ASSIGN(W_0,W_0 OR I_2)%,
+	J2 = %ASSIGN(W_0,W_0 OR J_2)%,
+	K2 = %ASSIGN(W_0,W_0 OR K_2)%,
+	L2 = %ASSIGN(W_0,W_0 OR L_2)%,
+	M2 = %ASSIGN(W_0,W_0 OR M_2)%,
+	A3 = %ASSIGN(W_1,W_1 OR A_3)%,
+	B3 = %ASSIGN(W_1,W_1 OR B_3)%,
+	C3 = %ASSIGN(W_1,W_1 OR C_3)%,
+	D3 = %ASSIGN(W_1,W_1 OR D_3)%,
+	E3 = %ASSIGN(W_1,W_1 OR E_3)%,
+	F3 = %ASSIGN(W_1,W_1 OR F_3)%,
+	G3 = %ASSIGN(W_1,W_1 OR G_3)%,
+	H3 = %ASSIGN(W_1,W_1 OR H_3)%,
+	I3 = %ASSIGN(W_1,W_1 OR I_3)%,
+	J3 = %ASSIGN(W_1,W_1 OR J_3)%,
+	K3 = %ASSIGN(W_1,W_1 OR K_3)%,
+	L3 = %ASSIGN(W_1,W_1 OR L_3)%,
+	M3 = %ASSIGN(W_1,W_1 OR M_3)%,
+	N3 = %ASSIGN(W_1,W_1 OR N_3)%,
+	O3 = %ASSIGN(W_1,W_1 OR O_3)%,
+	A4 = %ASSIGN(W_1,W_1 OR A_4)%,
+	B4 = %ASSIGN(W_1,W_1 OR B_4)%,
+	C4 = %ASSIGN(W_1,W_1 OR C_4)%,
+	D4 = %ASSIGN(W_1,W_1 OR D_4)%,
+	E4 = %ASSIGN(W_1,W_1 OR E_4)%,
+	F4 = %ASSIGN(W_1,W_1 OR F_4)%,
+	G4 = %ASSIGN(W_1,W_1 OR G_4)%,
+	H4 = %ASSIGN(W_1,W_1 OR H_4)%,
+	I4 = %ASSIGN(W_1,W_1 OR I_4)%,
+	J4 = %ASSIGN(W_1,W_1 OR J_4)%,
+	K4 = %ASSIGN(W_1,W_1 OR K_4)%,
+	L4 = %ASSIGN(W_1,W_1 OR L_4)%,
+	M4 = %ASSIGN(W_1,W_1 OR M_4)%,
+	A5 = %ASSIGN(W_2,W_2 OR A_5)%,
+	B5 = %ASSIGN(W_2,W_2 OR B_5)%,
+	C5 = %ASSIGN(W_2,W_2 OR C_5)%,
+	D5 = %ASSIGN(W_2,W_2 OR D_5)%,
+	E5 = %ASSIGN(W_2,W_2 OR E_5)%,
+	F5 = %ASSIGN(W_2,W_2 OR F_5)%,
+	G5 = %ASSIGN(W_2,W_2 OR G_5)%,
+	H5 = %ASSIGN(W_2,W_2 OR H_5)%,
+	I5 = %ASSIGN(W_2,W_2 OR I_5)%,
+	A6 = %ASSIGN(W_2,W_2 OR A_6)%,
+	B6 = %ASSIGN(W_2,W_2 OR B_6)%,
+	C6 = %ASSIGN(W_2,W_2 OR C_6)%,
+	D6 = %ASSIGN(W_2,W_2 OR D_6)%,
+	E6 = %ASSIGN(W_2,W_2 OR E_6)%,
+	F6 = %ASSIGN(W_2,W_2 OR F_6)%,
+	G6 = %ASSIGN(W_2,W_2 OR G_6)%,
+	H6 = %ASSIGN(W_2,W_2 OR H_6)%,
+	A7 = %ASSIGN(W_2,W_2 OR A_7)%,
+	B7 = %ASSIGN(W_2,W_2 OR B_7)%,
+	C7 = %ASSIGN(W_2,W_2 OR C_7)%,
+	D7 = %ASSIGN(W_2,W_2 OR D_7)%,
+	E7 = %ASSIGN(W_2,W_2 OR E_7)%,
+	F7 = %ASSIGN(W_2,W_2 OR F_7)%,
+	G7 = %ASSIGN(W_2,W_2 OR G_7)%,
+	H7 = %ASSIGN(W_2,W_2 OR H_7)%,
+	I7 = %ASSIGN(W_2,W_2 OR I_7)%,
+	J7 = %ASSIGN(W_2,W_2 OR J_7)%,
+	K7 = %ASSIGN(W_2,W_2 OR K_7)%,
+	L7 = %ASSIGN(W_2,W_2 OR L_7)%,
+	A8 = %ASSIGN(W_3,W_3 OR A_8)%,
+	B8 = %ASSIGN(W_3,W_3 OR B_8)%,
+	C8 = %ASSIGN(W_3,W_3 OR C_8)%,
+	D8 = %ASSIGN(W_3,W_3 OR D_8)%,
+	E8 = %ASSIGN(W_3,W_3 OR E_8)%,
+	F8 = %ASSIGN(W_3,W_3 OR F_8)%,
+	G8 = %ASSIGN(W_3,W_3 OR G_8)%,
+	H8 = %ASSIGN(W_3,W_3 OR H_8)%,
+	I8 = %ASSIGN(W_3,W_3 OR I_8)%,
+	J8 = %ASSIGN(W_3,W_3 OR J_8)%,
+	K8 = %ASSIGN(W_3,W_3 OR K_8)%,
+	A9 = %ASSIGN(W_3,W_3 OR A_9)%,
+	B9 = %ASSIGN(W_3,W_3 OR B_9)%,
+	C9 = %ASSIGN(W_3,W_3 OR C_9)%,
+	AA = %ASSIGN(W_3,W_3 OR A_A)%,
+	BA = %ASSIGN(W_3,W_3 OR B_A)%,
+	AB = %ASSIGN(W_3,W_3 OR A_B)%,
+	BB = %ASSIGN(W_3,W_3 OR B_B)%,
+	CB = %ASSIGN(W_3,W_3 OR C_B)%,
+	DB = %ASSIGN(W_3,W_3 OR D_B)%,
+	AC = %ASSIGN(W_3,W_3 OR A_C)%,
+	BC = %ASSIGN(W_3,W_3 OR B_C)%,
+	CC = %ASSIGN(W_3,W_3 OR C_C)%,
+
+	A_J1 = A1 B1 C1 D1 E1 F1 G1 H1 I1 J1%,
+	A_N1 = A1 B1 C1 D1 E1 F1 G1 H1 I1 J1 K1 L1 M1 N1%,
+	A_M2 = A2 B2 C2 D2 E2 F2 G2 H2 I2 J2 K2 L2 M2%,
+	EFION3 = E3 F3 I3 O3 N3%,
+	JLMN3 = J3 L3 M3 N3%,
+	A_D3 = A3 B3 C3 D3%,
+	ABCD3 = A3 B3 C3 D3%,
+	I_O3 = I3 J3 K3 L3 M3 N3 O3%,
+	A_G4 = A4 B4 C4 D4 E4 F4 G4%,
+	A_H4 = A4 B4 C4 D4 E4 F4 G4 H4%,
+	A_I4 = A4 B4 C4 D4 E4 F4 G4 H4 I4%,
+	A_HKLM4 = A4 B4 C4 D4 E4 F4 G4 H4 K4 L4 M4%,
+	A_IKLM4 = A4 B4 C4 D4 E4 F4 G4 H4 I4 K4 L4 M4%,
+	DEFGH5 = D5 E5 F5 G5 H5%,
+	C_H5 = C5 D5 E5 F5 G5 H5%,
+	A_H6 = A6 B6 C6 D6 E6 F6 G6 H6%,
+	A_L7 = A7 B7 C7 D7 E7 F7 G7 H7 I7 J7 K7 L7%,
+	C_K7 = C7 D7 E7 F7 G7 H7 I7 J7 K7%,
+	B_H8 = B8 C8 D8 E8 F8 G8 H8%,
+	B_K8 = B8 C8 D8 E8 F8 G8 H8 I8 J8 K8%;
+
+
+   

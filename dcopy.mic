@@ -1,0 +1,8 @@
+; Use DIU to copy diags from KL1026.
+; Arg to MIC file is diag name - eg. DO DCOPY DBKAB
+;
+@DIU
+*COPY/USER/PASS/IMAGE'B KL1026::"DSKB:[10,7000,temp]*.*" MORDOR:<LATEST.'A>*.*.-1
+*DIAG
+*MAGTAP
+*EXIT
